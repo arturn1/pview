@@ -1,0 +1,411 @@
+{
+  "id": "proj_gestor_projetos",
+  "name": "FlowDoc — Mapa da Aplicação",
+  "description": "Mapa das funcionalidades do FlowDoc: navegação visual, edição, regras, cálculos e persistência de projetos.",
+  "version": "1.0.0",
+  "createdAt": "2026-11-25T01:20:00.000Z",
+  "updatedAt": "2026-11-25T01:20:00.000Z",
+  "tags": ["Documentação", "Canvas", "Editor", "Persistência"],
+  "isPublic": false,
+  "canvasSettings": {
+    "defaultZoom": 0.7,
+    "backgroundColor": "#F8F9FC",
+    "gridVisible": true,
+    "snapToGrid": false,
+    "miniMapVisible": true,
+    "initialViewport": { "x": 100, "y": 30, "zoom": 0.7 }
+  },
+  "nodes": [
+    {
+      "id": "mod_navegacao",
+      "projectId": "proj_gestor_projetos",
+      "parentId": null,
+      "type": "module",
+      "title": "Módulo: Navegação e Exploração",
+      "icon": "FolderKanban",
+      "color": "#6366F1",
+      "tags": ["Canvas", "Explorador"],
+      "position": { "x": 200, "y": 40 },
+      "size": { "width": 840, "height": 330 },
+      "expanded": true,
+      "content": {
+        "description": "Apresenta um mapa visual de módulos, funcionalidades e conexões para exploração.",
+        "rules": [],
+        "calculations": [],
+        "inputs": [],
+        "outputs": []
+      }
+    },
+    {
+      "id": "feat_explorar_canvas",
+      "projectId": "proj_gestor_projetos",
+      "parentId": "mod_navegacao",
+      "type": "feature",
+      "title": "Explorar o Canvas",
+      "color": "#6366F1",
+      "tags": ["Zoom", "Navegação"],
+      "position": { "x": 260, "y": 130 },
+      "size": { "width": 320, "height": 180 },
+      "expanded": false,
+      "content": {
+        "description": "Navega pelo mapa com zoom, deslocamento e minimapa. Cards podem ser expandidos e abertos no painel lateral.",
+        "rules": [
+          {
+            "id": "rule_modo_explorador",
+            "conditional": "when",
+            "condition": "O modo explorador está ativo",
+            "consequence": "Os nós não podem ser arrastados nem conectados.",
+            "severity": "warning"
+          }
+        ],
+        "calculations": [],
+        "inputs": [],
+        "outputs": []
+      }
+    },
+    {
+      "id": "feat_buscar_filtrar",
+      "projectId": "proj_gestor_projetos",
+      "parentId": "mod_navegacao",
+      "type": "feature",
+      "title": "Buscar e Filtrar",
+      "color": "#6366F1",
+      "tags": ["Busca", "Módulos"],
+      "position": { "x": 660, "y": 130 },
+      "size": { "width": 320, "height": 180 },
+      "expanded": false,
+      "content": {
+        "description": "Busca funcionalidades por nome, tag ou descrição e permite filtrar o canvas por módulo.",
+        "rules": [],
+        "calculations": [],
+        "inputs": [],
+        "outputs": []
+      }
+    },
+    {
+      "id": "mod_editor",
+      "projectId": "proj_gestor_projetos",
+      "parentId": null,
+      "type": "module",
+      "title": "Módulo: Editor do Mapa",
+      "icon": "FolderKanban",
+      "color": "#0EA5E9",
+      "tags": ["Editor", "Nós", "Conexões"],
+      "position": { "x": 200, "y": 440 },
+      "size": { "width": 840, "height": 330 },
+      "expanded": true,
+      "content": {
+        "description": "Permite organizar o mapa e editar módulos, funcionalidades e conexões.",
+        "rules": [],
+        "calculations": [],
+        "inputs": [],
+        "outputs": []
+      }
+    },
+    {
+      "id": "feat_editar_nos",
+      "projectId": "proj_gestor_projetos",
+      "parentId": "mod_editor",
+      "type": "feature",
+      "title": "Editar Módulos e Funcionalidades",
+      "color": "#0EA5E9",
+      "tags": ["Criação", "Edição", "Exclusão"],
+      "position": { "x": 260, "y": 530 },
+      "size": { "width": 320, "height": 180 },
+      "expanded": false,
+      "content": {
+        "description": "Cria, move e exclui módulos e funcionalidades; permite editar título e descrição e redimensionar módulos.",
+        "rules": [
+          {
+            "id": "rule_feature_modulo",
+            "conditional": "when",
+            "condition": "Uma funcionalidade é criada",
+            "consequence": "Ela é vinculada a um módulo selecionado.",
+            "severity": "warning",
+            "crudOperation": "create"
+          },
+          {
+            "id": "rule_expandir_modulo",
+            "conditional": "if",
+            "condition": "Uma nova funcionalidade ultrapassa a altura atual do módulo",
+            "consequence": "A altura do módulo é ampliada automaticamente.",
+            "severity": "warning"
+          }
+        ],
+        "calculations": [],
+        "inputs": [],
+        "outputs": []
+      }
+    },
+    {
+      "id": "feat_editar_conexoes",
+      "projectId": "proj_gestor_projetos",
+      "parentId": "mod_editor",
+      "type": "feature",
+      "title": "Conectar Funcionalidades",
+      "color": "#0EA5E9",
+      "tags": ["Fluxo", "Conexões"],
+      "position": { "x": 660, "y": 530 },
+      "size": { "width": 320, "height": 180 },
+      "expanded": false,
+      "content": {
+        "description": "Cria conexões direcionais por pontos nos cards e permite excluí-las no canvas ou no painel lateral.",
+        "rules": [
+          {
+            "id": "rule_conexao_mesmo_no",
+            "conditional": "if",
+            "condition": "A origem e o destino são o mesmo nó",
+            "consequence": "A conexão não é criada.",
+            "severity": "critical",
+            "crudOperation": "create"
+          },
+          {
+            "id": "rule_conexao_duplicada",
+            "conditional": "if",
+            "condition": "Já existe conexão com a mesma origem, destino e pontos de conexão",
+            "consequence": "A conexão duplicada não é adicionada ao projeto.",
+            "severity": "critical",
+            "crudOperation": "create"
+          }
+        ],
+        "calculations": [],
+        "inputs": [],
+        "outputs": []
+      }
+    },
+    {
+      "id": "mod_conteudo",
+      "projectId": "proj_gestor_projetos",
+      "parentId": null,
+      "type": "module",
+      "title": "Módulo: Regras e Cálculos",
+      "icon": "Calculator",
+      "color": "#10B981",
+      "tags": ["Regras", "Fórmulas"],
+      "position": { "x": 200, "y": 840 },
+      "size": { "width": 840, "height": 330 },
+      "expanded": true,
+      "content": {
+        "description": "Documenta regras de negócio e fórmulas associadas aos componentes do mapa.",
+        "rules": [],
+        "calculations": [],
+        "inputs": [],
+        "outputs": []
+      }
+    },
+    {
+      "id": "feat_editar_regras",
+      "projectId": "proj_gestor_projetos",
+      "parentId": "mod_conteudo",
+      "type": "feature",
+      "title": "Documentar Regras",
+      "color": "#10B981",
+      "tags": ["Condicionais", "CRUD"],
+      "position": { "x": 260, "y": 930 },
+      "size": { "width": 320, "height": 180 },
+      "expanded": false,
+      "content": {
+        "description": "Cria, edita e exclui regras com condição, consequência, severidade e opções de condicionais, operadores lógicos e operações CRUD.",
+        "rules": [
+          {
+            "id": "rule_documentacao",
+            "conditional": "when",
+            "condition": "Uma regra é cadastrada no FlowDoc",
+            "consequence": "A regra documenta o comportamento; não executa operações CRUD.",
+            "severity": "warning"
+          }
+        ],
+        "calculations": [],
+        "inputs": [],
+        "outputs": []
+      }
+    },
+    {
+      "id": "feat_simular_calculos",
+      "projectId": "proj_gestor_projetos",
+      "parentId": "mod_conteudo",
+      "type": "feature",
+      "title": "Editar e Simular Cálculos",
+      "color": "#10B981",
+      "tags": ["Fórmulas", "Simulador"],
+      "position": { "x": 660, "y": 930 },
+      "size": { "width": 320, "height": 180 },
+      "expanded": false,
+      "content": {
+        "description": "Cria e edita fórmulas e variáveis; o simulador calcula expressões aritméticas com valores informados pelo usuário.",
+        "rules": [
+          {
+            "id": "rule_simulador_expressao",
+            "conditional": "if",
+            "condition": "A expressão não é suportada ou o resultado não é finito",
+            "consequence": "O simulador não apresenta um resultado numérico.",
+            "severity": "warning"
+          }
+        ],
+        "calculations": [],
+        "inputs": [],
+        "outputs": []
+      }
+    },
+    {
+      "id": "mod_persistencia",
+      "projectId": "proj_gestor_projetos",
+      "parentId": null,
+      "type": "module",
+      "title": "Módulo: Projetos e Persistência",
+      "icon": "FolderKanban",
+      "color": "#F59E0B",
+      "tags": ["SQLite", "JSON"],
+      "position": { "x": 200, "y": 1240 },
+      "size": { "width": 840, "height": 330 },
+      "expanded": true,
+      "content": {
+        "description": "Carrega e salva o mapa por um repositório, com API SQLite local no servidor de desenvolvimento.",
+        "rules": [],
+        "calculations": [],
+        "inputs": [],
+        "outputs": []
+      }
+    },
+    {
+      "id": "feat_salvar_carregar",
+      "projectId": "proj_gestor_projetos",
+      "parentId": "mod_persistencia",
+      "type": "feature",
+      "title": "Carregar e Salvar Projeto",
+      "color": "#F59E0B",
+      "tags": ["SQLite", "Repositório"],
+      "position": { "x": 260, "y": 1330 },
+      "size": { "width": 320, "height": 180 },
+      "expanded": false,
+      "content": {
+        "description": "Carrega o projeto ao iniciar e solicita salvamento em segundo plano quando o mapa é alterado.",
+        "rules": [
+          {
+            "id": "rule_id_carregamento",
+            "conditional": "when",
+            "condition": "A aplicação é iniciada",
+            "consequence": "O repositório procura o projeto com ID proj_gestor_projetos.",
+            "severity": "warning"
+          }
+        ],
+        "calculations": [],
+        "inputs": [],
+        "outputs": []
+      }
+    },
+    {
+      "id": "feat_importar_exportar",
+      "projectId": "proj_gestor_projetos",
+      "parentId": "mod_persistencia",
+      "type": "feature",
+      "title": "Importar e Exportar JSON",
+      "color": "#F59E0B",
+      "tags": ["Importação", "Exportação", "Backup"],
+      "position": { "x": 660, "y": 1330 },
+      "size": { "width": 320, "height": 180 },
+      "expanded": false,
+      "content": {
+        "description": "Exporta o projeto inteiro em JSON ou importa um arquivo para substituir o projeto exibido.",
+        "rules": [
+          {
+            "id": "rule_importacao_formato",
+            "conditional": "if",
+            "condition": "O JSON não possui ID ou nodes e connections não são listas",
+            "consequence": "A importação é rejeitada e um aviso é exibido.",
+            "severity": "critical"
+          },
+          {
+            "id": "rule_importacao_validacao",
+            "conditional": "when",
+            "condition": "Um JSON é importado",
+            "consequence": "A validação é limitada ao ID e às listas de nós e conexões; os demais campos não são validados.",
+            "severity": "warning"
+          }
+        ],
+        "calculations": [],
+        "inputs": [],
+        "outputs": []
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "conn_busca_explorar",
+      "projectId": "proj_gestor_projetos",
+      "fromId": "feat_buscar_filtrar",
+      "toId": "feat_explorar_canvas",
+      "sourceHandle": "source-bottom",
+      "targetHandle": "target-top",
+      "type": "sync",
+      "description": "A busca e os filtros ajudam a localizar conteúdo no canvas.",
+      "style": { "color": "#6366F1", "animated": false, "thickness": 2 }
+    },
+    {
+      "id": "conn_editar_conectar",
+      "projectId": "proj_gestor_projetos",
+      "fromId": "feat_editar_nos",
+      "toId": "feat_editar_conexoes",
+      "sourceHandle": "source-right",
+      "targetHandle": "target-left",
+      "type": "sync",
+      "description": "As funcionalidades do mapa podem ser conectadas para representar fluxos.",
+      "style": { "color": "#0EA5E9", "animated": false, "thickness": 2 }
+    },
+    {
+      "id": "conn_nos_regras",
+      "projectId": "proj_gestor_projetos",
+      "fromId": "feat_editar_nos",
+      "toId": "feat_editar_regras",
+      "sourceHandle": "source-bottom",
+      "targetHandle": "target-top",
+      "type": "sync",
+      "description": "Módulos e funcionalidades podem conter regras documentadas.",
+      "style": { "color": "#10B981", "animated": false, "thickness": 2 }
+    },
+    {
+      "id": "conn_nos_calculos",
+      "projectId": "proj_gestor_projetos",
+      "fromId": "feat_editar_nos",
+      "toId": "feat_simular_calculos",
+      "sourceHandle": "source-bottom",
+      "targetHandle": "target-top",
+      "type": "sync",
+      "description": "Módulos e funcionalidades podem conter cálculos e variáveis.",
+      "style": { "color": "#10B981", "animated": false, "thickness": 2 }
+    },
+    {
+      "id": "conn_regras_salvar",
+      "projectId": "proj_gestor_projetos",
+      "fromId": "feat_editar_regras",
+      "toId": "feat_salvar_carregar",
+      "sourceHandle": "source-bottom",
+      "targetHandle": "target-top",
+      "type": "async",
+      "description": "Alterações nas regras solicitam o salvamento do projeto.",
+      "style": { "color": "#F59E0B", "animated": true, "thickness": 2 }
+    },
+    {
+      "id": "conn_calculos_salvar",
+      "projectId": "proj_gestor_projetos",
+      "fromId": "feat_simular_calculos",
+      "toId": "feat_salvar_carregar",
+      "sourceHandle": "source-bottom",
+      "targetHandle": "target-top",
+      "type": "async",
+      "description": "Alterações nos cálculos solicitam o salvamento do projeto.",
+      "style": { "color": "#F59E0B", "animated": true, "thickness": 2 }
+    },
+    {
+      "id": "conn_importar_salvar",
+      "projectId": "proj_gestor_projetos",
+      "fromId": "feat_importar_exportar",
+      "toId": "feat_salvar_carregar",
+      "sourceHandle": "source-bottom",
+      "targetHandle": "target-top",
+      "type": "async",
+      "description": "Após uma importação aceita, o projeto é enviado para persistência.",
+      "style": { "color": "#F59E0B", "animated": true, "thickness": 2 }
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+# Dependencies and build output
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Local database and SQLite sidecars
+flowdoc.db
+flowdoc.db-journal
+flowdoc.db-shm
+flowdoc.db-wal
+
+# Local configuration and logs
+.env
+.env.*
+!.env.example
+*.log
+
+# OS and editor files
+.DS_Store
+.vscode/
+.idea/
