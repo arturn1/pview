@@ -12,6 +12,7 @@ import {
   Edit3,
   FolderKanban,
   Check,
+  GripVertical,
   Plus,
   Download,
   Upload,
@@ -51,13 +52,16 @@ export function CanvasToolbar({
     exportProjectJson, 
     importProjectJson,
     selectProject,
-    openPilotProject
+    openPilotProject,
+    reorderModules
   } = useProjectStore();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isAddFeatureOpen, setIsAddFeatureOpen] = useState(false);
   const [isAddModuleOpen, setIsAddModuleOpen] = useState(false);
+  const [draggedModuleId, setDraggedModuleId] = useState<string | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -65,7 +69,11 @@ export function CanvasToolbar({
     setIsSearchOpen(false);
   }, [project.id]);
 
-  const modules = project.nodes.filter(n => n.type === 'module');
+  const modules = project.nodes
+    .filter(n => n.type === 'module')
+    .map((node, index) => ({ node, index }))
+    .sort((a, b) => (a.node.order ?? Infinity) - (b.node.order ?? Infinity) || a.index - b.index)
+    .map(({ node }) => node);
   const allFeatures = project.nodes.filter(n => n.type === 'feature');
 
   const searchResults = searchQuery.trim()
@@ -75,6 +83,13 @@ export function CanvasToolbar({
         f.content.description.toLowerCase().includes(searchQuery.toLowerCase())
       )
     : [];
+
+  const moveModule = (moduleId: string, targetId: string) => {
+    if (moduleId === targetId) return;
+    const ids = modules.map(mod => mod.id).filter(id => id !== moduleId);
+    ids.splice(ids.indexOf(targetId), 0, moduleId);
+    reorderModules(ids);
+  };
 
   const handleExport = () => {
     const json = exportProjectJson();
@@ -178,16 +193,30 @@ export function CanvasToolbar({
 
             {modules.map(mod => {
               const isSelected = selectedModuleId === mod.id;
+              const reorderable = mode === 'editor';
               return (
                 <button
                   key={mod.id}
+                  draggable={reorderable}
+                  onDragStart={reorderable ? () => setDraggedModuleId(mod.id) : undefined}
+                  onDragOver={reorderable && draggedModuleId ? event => { event.preventDefault(); setDropTargetId(mod.id); } : undefined}
+                  onDrop={reorderable && draggedModuleId ? event => { event.preventDefault(); moveModule(draggedModuleId, mod.id); setDraggedModuleId(null); setDropTargetId(null); } : undefined}
+                  onDragEnd={() => { setDraggedModuleId(null); setDropTargetId(null); }}
+                  onKeyDown={reorderable ? event => {
+                    if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
+                    event.preventDefault();
+                    const position = modules.findIndex(item => item.id === mod.id) + (event.key === 'ArrowUp' ? -1 : 1);
+                    if (modules[position]) moveModule(mod.id, modules[position].id);
+                  } : undefined}
                   onClick={() => onFilterModule(isSelected ? null : mod.id)}
+                  title={reorderable ? 'Arraste para reordenar (ou Alt + setas)' : undefined}
                   className={`shrink-0 px-3 py-1.5 rounded-xl text-left text-xs font-semibold transition-all flex items-center gap-1.5 ${
                     isSelected
                       ? 'bg-brand-600 text-white shadow-xs'
                       : 'text-slate-600 hover:bg-slate-100'
-                  }`}
+                  } ${draggedModuleId === mod.id ? 'opacity-40' : ''} ${dropTargetId === mod.id && draggedModuleId !== mod.id ? 'ring-2 ring-brand-400' : ''}`}
                 >
+                  {reorderable && <GripVertical className="w-3 h-3 shrink-0 opacity-50 cursor-grab" aria-hidden="true" />}
                   <FolderKanban className="w-3.5 h-3.5 shrink-0" />
                   <span className="min-w-0 flex-1 break-words">{mod.title.replace('Módulo: ', '')}</span>
                   {isSelected && <Check className="w-3 h-3 ml-0.5 shrink-0" />}

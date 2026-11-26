@@ -30,6 +30,8 @@ interface ProjectStore {
   updateNodeInfo: (nodeId: string, title: string, description: string) => void;
   updateNodeExpanded: (nodeId: string, expanded: boolean) => void;
   updateNodePosition: (nodeId: string, position: { x: number; y: number }) => void;
+  updateNodePositions: (positions: Record<string, { x: number; y: number }>) => void;
+  reorderModules: (orderedIds: string[]) => void;
   updateNodeSize: (nodeId: string, size: { width: number; height: number }) => void;
   deleteNode: (nodeId: string) => Promise<void>;
 
@@ -310,6 +312,33 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
           }
           return n;
         }),
+      };
+
+      persistProject(updatedProject);
+
+      return { project: updatedProject };
+    });
+  },
+
+  updateNodePositions: (positions) => {
+    set((state) => {
+      const updatedProject = {
+        ...state.project,
+        nodes: state.project.nodes.map((n) => (positions[n.id] ? { ...n, position: positions[n.id] } : n)),
+      };
+
+      persistProject(updatedProject);
+
+      return { project: updatedProject };
+    });
+  },
+
+  reorderModules: (orderedIds) => {
+    set((state) => {
+      const orders = new Map(orderedIds.map((id, index) => [id, index]));
+      const updatedProject = {
+        ...state.project,
+        nodes: state.project.nodes.map((n) => (n.type === 'module' && orders.has(n.id) ? { ...n, order: orders.get(n.id) } : n)),
       };
 
       persistProject(updatedProject);

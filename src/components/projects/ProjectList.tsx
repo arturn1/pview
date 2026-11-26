@@ -115,8 +115,8 @@ export function ProjectList({ user, onLogout, onOpenProject, onOpenSprints, onMa
                   <ArrowRight className="h-4 w-4 shrink-0 text-slate-300 group-hover:text-brand-600" />
                 </button>
                 <div className="flex flex-nowrap justify-end gap-0.5 border-t border-slate-100 px-3 py-2">
-                  {user.role !== 'USER' && <button type="button" disabled={loadingEdit} onClick={() => onOpenHistory?.(project.id)} aria-label={`Histórico de ${project.name}`} className="flex items-center gap-1 whitespace-nowrap rounded-lg px-1.5 py-2 text-[11px] font-semibold text-slate-500 hover:bg-slate-100 hover:text-brand-600 disabled:opacity-50">
-                    <History className="h-3.5 w-3.5" /> Histórico
+                  {user.role !== 'USER' && <button type="button" disabled={loadingEdit} onClick={() => onOpenHistory?.(project.id)} aria-label={`Aprovações de ${project.name}`} className="flex items-center gap-1 whitespace-nowrap rounded-lg px-1.5 py-2 text-[11px] font-semibold text-slate-500 hover:bg-slate-100 hover:text-brand-600 disabled:opacity-50">
+                    <History className="h-3.5 w-3.5" /> Aprovações
                   </button>}
                   <button type="button" disabled={loadingEdit} onClick={() => onOpenSprints(project.id)} aria-label={`Sprints de ${project.name}`} className="flex items-center gap-1 whitespace-nowrap rounded-lg px-1.5 py-2 text-[11px] font-semibold text-slate-500 hover:bg-slate-100 hover:text-brand-600 disabled:opacity-50">
                     <CalendarDays className="h-3.5 w-3.5" /> Sprints

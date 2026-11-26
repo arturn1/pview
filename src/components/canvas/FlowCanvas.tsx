@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useEffect } from 'react';
+import { useMemo, useState, useCallback, useEffect, useRef, type MouseEvent as ReactMouseEvent } from 'react';
 import {
   ReactFlow,
   Background,
@@ -40,7 +40,7 @@ function FlowCanvasContent({ onBackToProjects, onOpenSprints, onLogout }: { onBa
     setSelectedNodeId,
     addConnection,
     deleteConnection,
-    updateNodePosition,
+    updateNodePositions,
     loadFromRepository,
     isLoading,
     loadError,
@@ -153,7 +153,10 @@ function FlowCanvasContent({ onBackToProjects, onOpenSprints, onLogout }: { onBa
 
   // Sincroniza nodes e edges com o store
   useEffect(() => {
-    setNodes(initialNodes);
+    setNodes(previous => {
+      const selected = new Set(previous.filter(node => node.selected).map(node => node.id));
+      return initialNodes.map(node => (selected.has(node.id) ? { ...node, selected: true } : node));
+    });
   }, [initialNodes, setNodes]);
 
   useEffect(() => {
@@ -206,14 +209,53 @@ function FlowCanvasContent({ onBackToProjects, onOpenSprints, onLogout }: { onBa
   );
 
   // Evento ao soltar um nó após arrastar no canvas
-  const handleNodeDragStop = useCallback(
-    (_event: unknown, node: Node) => {
-      if (mode === 'editor') {
-        updateNodePosition(node.id, { x: node.position.x, y: node.position.y });
-      }
+  const moduleDrag = useRef<{ moduleId: string; origin: { x: number; y: number }; children: Map<string, { x: number; y: number }> } | null>(null);
+
+  // Arrastar um módulo sozinho leva suas funcionalidades junto
+  const handleNodeDragStart = useCallback(
+    (_event: unknown, node: Node, dragged: Node[]) => {
+      moduleDrag.current = null;
+      if (mode !== 'editor' || node.type !== 'module' || dragged.length > 1) return;
+      const children = new Map(project.nodes.filter(child => child.parentId === node.id).map(child => [child.id, { ...child.position }]));
+      moduleDrag.current = { moduleId: node.id, origin: { ...node.position }, children };
     },
-    [mode, updateNodePosition]
+    [mode, project.nodes]
   );
+
+  const handleNodeDrag = useCallback((_event: unknown, node: Node) => {
+    const drag = moduleDrag.current;
+    if (!drag || drag.moduleId !== node.id) return;
+    const dx = node.position.x - drag.origin.x;
+    const dy = node.position.y - drag.origin.y;
+    setNodes(current => current.map(item => {
+      const start = drag.children.get(item.id);
+      return start ? { ...item, position: { x: start.x + dx, y: start.y + dy } } : item;
+    }));
+  }, [setNodes]);
+
+  const handleNodeDragStop = useCallback(
+    (_event: unknown, node: Node, dragged: Node[]) => {
+      if (mode !== 'editor') return;
+      const positions: Record<string, { x: number; y: number }> = {};
+      for (const item of dragged.length ? dragged : [node]) positions[item.id] = { x: item.position.x, y: item.position.y };
+      const drag = moduleDrag.current;
+      if (drag && drag.moduleId === node.id) {
+        const dx = node.position.x - drag.origin.x;
+        const dy = node.position.y - drag.origin.y;
+        for (const [id, start] of drag.children) positions[id] = { x: start.x + dx, y: start.y + dy };
+      }
+      moduleDrag.current = null;
+      updateNodePositions(positions);
+    },
+    [mode, updateNodePositions]
+  );
+
+  // Clicar em um módulo no modo editor seleciona o módulo inteiro com suas funcionalidades
+  const handleNodeClick = useCallback((event: ReactMouseEvent, node: Node) => {
+    if (mode !== 'editor' || node.type !== 'module' || event.shiftKey || event.metaKey || event.ctrlKey) return;
+    const childIds = new Set(project.nodes.filter(child => child.parentId === node.id).map(child => child.id));
+    setNodes(current => current.map(item => ({ ...item, selected: item.id === node.id || childIds.has(item.id) })));
+  }, [mode, project.nodes, setNodes]);
 
   // Evento ao excluir arestas (ex: selecionando a linha e pressionando Delete/Backspace)
   const handleEdgesDelete = useCallback(
@@ -291,6 +333,9 @@ function FlowCanvasContent({ onBackToProjects, onOpenSprints, onLogout }: { onBa
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={handleConnect}
+        onNodeClick={handleNodeClick}
+        onNodeDragStart={handleNodeDragStart}
+        onNodeDrag={handleNodeDrag}
         onNodeDragStop={handleNodeDragStop}
         onEdgesDelete={handleEdgesDelete}
         edgesFocusable={mode === 'editor'}

@@ -323,6 +323,8 @@ O domínio acessa os contratos de repositórios por entidade em `Storage` e `Use
 - **Criar Módulo:** botão `+ Novo Módulo` na toolbar, com escolha de cor e descrição
 - **Criar Funcionalidade:** botão `+ Nova Funcionalidade`, vincula a um módulo existente
 - **Mover nós:** arraste qualquer card ou container livremente
+- **Ordem dos módulos:** no modo editor, arraste os módulos na lista lateral (ou use `Alt`+setas) para reordená-los; a ordem é salva no projeto e passa pelo fluxo de aprovação.
+- **Seleção e movimento em grupo:** clicar em um módulo seleciona o módulo e todas as suas funcionalidades; arrastar o módulo move o conjunto. `Shift`+arrastar desenha uma caixa de seleção e `Cmd`/`Ctrl`+clique soma itens; todos os itens selecionados têm a nova posição salva.
 - **Redimensionar módulos:** clique no módulo, abra o painel lateral e use **Redimensionar módulo** → arraste bordas/cantos → **Concluir redimensionamento**. O painel do módulo destaca "O que este módulo faz" e lista suas funcionalidades; regras, cálculos e fluxo existem apenas nas funcionalidades
 - **Conectar funcionalidades:** arraste a partir dos pontos de conexão (⊕) nas bordas dos cards
 - **Excluir módulos e funcionalidades:** use a lixeira no canvas ou no painel lateral e confirme a ação
