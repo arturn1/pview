@@ -12,6 +12,10 @@ export default defineConfig(({ mode }) => {
       proxy: { '/api': `http://localhost:${port}` },
       fs: { deny: ['.env', '.env.*', '*.{crt,pem}', '**/.git/**', '**/flowdoc.db', '**/flowdoc.db-*'] },
     },
+    preview: {
+      host: env.WEB_HOST || 'localhost', port: 3000, strictPort: true,
+      proxy: { '/api': `http://localhost:${port}` },
+    },
     plugins: [react()],
     resolve: { alias: { '@': path.resolve(__dirname, './src') } },
   };

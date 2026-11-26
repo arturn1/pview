@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Rocket } from 'lucide-react';
+import { ArrowLeft, Bell, BellOff, Rocket } from 'lucide-react';
 import { getProject, type ProjectSummary } from '../../api/projects';
-import { getSprintOverview, type SprintOverview as Overview } from '../../api/planning';
+import { getDeploySubscription, getSprintOverview, setDeploySubscription, type SprintOverview as Overview } from '../../api/planning';
 import type { Sprint } from '../../api/sprints';
 import { useProjectStore } from '../../store/useProjectStore';
 import type { AuthUser } from '../common/AuthGate';
@@ -22,6 +22,30 @@ export function SprintOverview({ sprint, user, onLogout, onBack }: {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
+  const [subscribed, setSubscribed] = useState<boolean | null>(null);
+  const [subscriptionBusy, setSubscriptionBusy] = useState(false);
+  const [subscriptionError, setSubscriptionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setSubscribed(null);
+    getDeploySubscription(sprint.id).then(value => { if (active) setSubscribed(value); }).catch(() => { if (active) setSubscribed(false); });
+    return () => { active = false; };
+  }, [sprint.id]);
+
+  async function toggleSubscription() {
+    if (subscribed === null) return;
+    setSubscriptionBusy(true);
+    setSubscriptionError(null);
+    try {
+      await setDeploySubscription(sprint.id, !subscribed);
+      setSubscribed(!subscribed);
+    } catch (failure) {
+      setSubscriptionError(failure instanceof Error ? failure.message : 'Não foi possível atualizar o aviso de deploy.');
+    } finally {
+      setSubscriptionBusy(false);
+    }
+  }
 
   useEffect(() => {
     let active = true;
@@ -63,6 +87,15 @@ export function SprintOverview({ sprint, user, onLogout, onBack }: {
           <h1 className="mt-2 text-2xl font-extrabold text-slate-900">{sprint.name}</h1>
           <p className="mt-2 text-sm text-slate-500">{displayDate(sprint.startDate)} — {displayDate(sprint.endDate)}</p>
           <p className="mt-4 whitespace-pre-wrap text-sm text-slate-600">{sprint.objective}</p>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button type="button" onClick={toggleSubscription} disabled={subscribed === null || subscriptionBusy} aria-pressed={subscribed === true}
+              className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold transition disabled:opacity-50 ${subscribed ? 'border-brand-200 bg-brand-50 text-brand-700 hover:bg-brand-100' : 'border-slate-200 bg-white text-slate-600 hover:border-brand-300 hover:text-brand-600'}`}>
+              {subscribed ? <BellOff className="h-4 w-4" aria-hidden="true" /> : <Bell className="h-4 w-4" aria-hidden="true" />}
+              {subscribed ? 'Cancelar aviso de deploy por e-mail' : 'Avisar por e-mail quando houver deploy'}
+            </button>
+            {subscribed && <span className="text-xs text-slate-500">Você receberá um e-mail em {user.email}.</span>}
+            {subscriptionError && <span role="alert" className="text-xs text-rose-600">{subscriptionError}</span>}
+          </div>
         </div>
         {loading ? <p role="status" className="mt-8 text-sm text-slate-500">Carregando tarefas...</p> : error ? (
           <div role="alert" className="mt-8 rounded-2xl border border-rose-200 bg-white p-5 text-sm text-rose-700">

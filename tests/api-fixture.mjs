@@ -23,12 +23,15 @@ export async function createApiFixture() {
     const { PrismaStorage } = await vite.ssrLoadModule('/server/repositories/storage.ts');
     const { PrismaUserRepository } = await vite.ssrLoadModule('/server/repositories/users.ts');
     const { createApi } = await vite.ssrLoadModule('/server/http/api.ts');
+    const { NotificationService } = await vite.ssrLoadModule('/server/notifications/notification-service.ts');
     const users = new PrismaUserRepository(db);
     const settings = { issuer: 'https://identity.example.test', clientId: 'test', redirectUri: 'http://localhost:3000/', scope: 'openid profile email' };
     const { privateKey, publicKey } = await generateKeyPair('RS256');
     const jwk = { ...await exportJWK(publicKey), kid: 'test', alg: 'RS256' };
     const storage = new PrismaStorage(db);
-    server = createApi(storage, users, settings, async () => ({ authorizationEndpoint: `${settings.issuer}/authorize`, keys: createLocalJWKSet({ keys: [jwk] }) }));
+    const emails = [];
+    const notifier = new NotificationService(storage, { send: async message => { emails.push(message); } });
+    server = createApi(storage, users, settings, async () => ({ authorizationEndpoint: `${settings.issuer}/authorize`, keys: createLocalJWKSet({ keys: [jwk] }) }), notifier);
     server.listen(0, '127.0.0.1');
     await once(server, 'listening');
     const base = `http://127.0.0.1:${server.address().port}`;
@@ -56,7 +59,7 @@ export async function createApiFixture() {
       });
       return { status: response.status, body: await response.json() };
     }
-    return { db, storage, users, login, request, close };
+    return { db, storage, users, emails, login, request, close };
   } catch (error) {
     await close();
     throw error;

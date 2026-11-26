@@ -14,16 +14,17 @@ datasource db {
 }
 
 model User {
-  id                       String            @id @default(uuid())
-  email                    String            @unique
+  id                       String               @id @default(uuid())
+  email                    String               @unique
   name                     String
-  role                     Role              @default(USER)
+  role                     Role                 @default(USER)
   identities               Identity[]
-  projectProposals         ProjectProposal[] @relation("ProjectProposalAuthor")
-  editedProjectProposals   ProjectProposal[] @relation("ProjectProposalEditor")
-  authoredProjectRevisions ProjectRevision[] @relation("ProjectRevisionAuthor")
-  reviewedProjectRevisions ProjectRevision[] @relation("ProjectRevisionReviewer")
+  projectProposals         ProjectProposal[]    @relation("ProjectProposalAuthor")
+  editedProjectProposals   ProjectProposal[]    @relation("ProjectProposalEditor")
+  authoredProjectRevisions ProjectRevision[]    @relation("ProjectRevisionAuthor")
+  reviewedProjectRevisions ProjectRevision[]    @relation("ProjectRevisionReviewer")
   projectApprovers         ProjectApprover[]
+  deploySubscriptions      DeploySubscription[]
 }
 
 model Identity {
@@ -96,14 +97,15 @@ model ProjectRevision {
 }
 
 model Sprint {
-  id           String          @id @default(uuid())
-  name         String
-  nameFold     String
-  objective    String
-  startDate    String
-  endDate      String
-  projects     SprintProject[]
-  participants Participant[]
+  id                  String               @id @default(uuid())
+  name                String
+  nameFold            String
+  objective           String
+  startDate           String
+  endDate             String
+  projects            SprintProject[]
+  participants        Participant[]
+  deploySubscriptions DeploySubscription[]
 
   @@index([startDate, name, id])
 }
@@ -116,6 +118,17 @@ model SprintProject {
 
   @@id([sprintId, projectId])
   @@index([projectId, sprintId])
+}
+
+model DeploySubscription {
+  sprintId  String
+  userId    String
+  createdAt DateTime @default(now())
+  sprint    Sprint   @relation(fields: [sprintId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([sprintId, userId])
+  @@index([userId])
 }
 
 model Team {

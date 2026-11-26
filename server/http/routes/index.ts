@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { Notifier } from '../../domain/notifications';
 import type { Storage } from '../../domain/storage';
 import type { User } from '../../domain/users';
 import { handleError } from '../helpers';
@@ -23,17 +24,18 @@ const routes: Record<string, (context: RouteContext) => Promise<void | ServerRes
   '/api/sprint-participants': planningRoute,
   '/api/sprint-tasks': planningRoute,
   '/api/sprint-task-deploy': planningRoute,
+  '/api/sprint-deploy-subscription': planningRoute,
   '/api/sprint-import-devops': devOpsRoute,
   '/api/sprint-import-devops/preview': devOpsRoute,
 };
 
-export function createDomainMiddleware(storage: Storage, userFor: (req: IncomingMessage) => User | undefined) {
+export function createDomainMiddleware(storage: Storage, notifier: Notifier, userFor: (req: IncomingMessage) => User | undefined) {
   return async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     const url = new URL(req.url || '/', 'http://localhost');
     const route = routes[url.pathname];
     if (!route) return next();
     try {
-      return await route({ req, res, url, storage, userFor });
+      return await route({ req, res, url, storage, notifier, userFor });
     } catch (error) {
       return handleError(res, error);
     }

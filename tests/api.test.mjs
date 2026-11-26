@@ -6,7 +6,7 @@ import { createApiFixture } from './api-fixture.mjs';
 test('API PostgreSQL aplica permissões, vínculos e importação de tarefas', {
   skip: !process.env.FLOWDOC_TEST_DATABASE_URL && 'Use npm run test:postgres para criar um banco de teste.',
 }, async () => {
-  const { users, login, request, close } = await createApiFixture();
+  const { users, emails, login, request, close } = await createApiFixture();
   try {
     await users.seedAdministrator('admin@example.test');
     assert.equal((await request(null, '/api/projects')).status, 401);
@@ -52,6 +52,12 @@ test('API PostgreSQL aplica permissões, vínculos e importação de tarefas', {
     const proposal = { ...historyProject, description: 'Proposto' };
     const proposed = await request(admin.cookie, '/api/project', 'POST', proposal);
     assert.equal(proposed.body.pending, true);
+    assert.deepEqual(emails.map(email => email.to).sort(), ['reader@example.test', 'second-approver@example.test']);
+    assert.match(emails[0].subject, /Aprovação pendente/);
+    assert.equal((await request(admin.cookie, '/api/project', 'POST', { ...proposal, description: 'Proposto de novo' })).body.pending, true);
+    assert.equal(emails.length, 2);
+    assert.equal((await request(admin.cookie, '/api/project', 'POST', proposal)).body.pending, true);
+    emails.length = 0;
     assert.equal((await request(reader.cookie, '/api/auth/session')).body.role, 'APPROVER');
     assert.equal((await request(admin.cookie, '/api/project?id=history-workflow')).body.description, 'Proposto');
     assert.equal((await request(reader.cookie, '/api/project?id=history-workflow')).body.description, 'Publicado');
@@ -108,7 +114,22 @@ test('API PostgreSQL aplica permissões, vínculos e importação de tarefas', {
     assert.equal((await request(dev.cookie, '/api/sprint-task-deploy', 'PUT', { taskIds: [task.id], deployDate: '2026-12-01' })).status, 403);
     assert.equal((await request(reader.cookie, '/api/sprint-task-deploy', 'PUT', { taskIds: [task.id], deployDate: '2026-12-01' })).status, 403);
     assert.equal((await request(admin.cookie, '/api/sprint-task-deploy', 'PUT', { taskIds: [task.id], deployDate: '2026-02-31' })).status, 400);
+    emails.length = 0;
+    assert.equal((await request(dev.cookie, '/api/sprint-deploy-subscription', 'PUT', { sprintId: sprint.id, subscribed: true })).status, 403);
+    assert.equal((await request(admin.cookie, '/api/sprint-deploy-subscription', 'PUT', { sprintId: sprint.id, subscribed: true })).status, 403);
+    assert.equal((await request(reader.cookie, '/api/sprint-deploy-subscription', 'PUT', { sprintId: sprint.id, subscribed: 'sim' })).status, 400);
+    assert.equal((await request(reader.cookie, '/api/sprint-deploy-subscription', 'PUT', { sprintId: 'missing', subscribed: true })).status, 404);
+    assert.equal((await request(reader.cookie, '/api/sprint-deploy-subscription', 'PUT', { sprintId: sprint.id, subscribed: true })).status, 200);
+    assert.equal((await request(reader.cookie, '/api/sprint-deploy-subscription', 'PUT', { sprintId: sprint.id, subscribed: false })).status, 200);
+    assert.equal((await request(reader.cookie, `/api/sprint-deploy-subscription?sprintId=${sprint.id}`)).body.subscribed, false);
+    assert.equal((await request(reader.cookie, '/api/sprint-deploy-subscription', 'PUT', { sprintId: sprint.id, subscribed: true })).status, 200);
+    assert.equal((await request(reader.cookie, `/api/sprint-deploy-subscription?sprintId=${sprint.id}`)).body.subscribed, true);
     assert.equal((await request(admin.cookie, '/api/sprint-task-deploy', 'PUT', { taskIds: [task.id, otherTask.id], deployDate: '2026-12-01' })).body.updated, 2);
+    assert.equal(emails.length, 1);
+    assert.equal(emails[0].to, 'reader@example.test');
+    assert.match(emails[0].text, /#42/);
+    assert.equal((await request(admin.cookie, '/api/sprint-task-deploy', 'PUT', { taskIds: [task.id], deployDate: '2026-12-01' })).status, 200);
+    assert.equal(emails.length, 1);
     assert.equal((await request(dev.cookie, `/api/sprint-tasks?id=${task.id}`, 'PUT', { ...taskInput, lessons: 'Depois do deploy' })).status, 200);
     const deployed = (await request(reader.cookie, `/api/sprint-plan?sprintId=${sprint.id}`)).body.tasks.filter(item => item.deployDate === '2026-12-01');
     assert.equal(deployed.length, 2);

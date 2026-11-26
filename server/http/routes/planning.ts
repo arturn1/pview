@@ -32,7 +32,7 @@ async function validateTask(db: StorageSession, data: Record<string, unknown>, i
   };
 }
 
-export async function planningRoute({ req, res, url, storage, userFor }: RouteContext) {
+export async function planningRoute({ req, res, url, storage, notifier, userFor }: RouteContext) {
   const path = url.pathname;
   if (path === '/api/sprint-plan' && req.method === 'GET') {
     const sprintId = text(url.searchParams.get('sprintId'), 'a sprint');
@@ -85,6 +85,27 @@ export async function planningRoute({ req, res, url, storage, userFor }: RouteCo
       return respond(res, 200, req.method === 'PUT' ? { id } : { deleted: id });
     }
   }
+  if (path === '/api/sprint-deploy-subscription') {
+    const user = userFor(req);
+    if (!user) throw new RequestError(401, 'Autenticação necessária.');
+    if (req.method === 'GET') {
+      const sprintId = text(url.searchParams.get('sprintId'), 'a sprint');
+      return respond(res, 200, { subscribed: await storage.read(db => db.deploySubscriptions.isSubscribed(sprintId, user.id)) });
+    }
+    if (req.method === 'PUT') {
+      if (user.role !== 'USER' && user.role !== 'APPROVER') throw new RequestError(403, 'Apenas usuários e aprovadores recebem avisos de deploy.');
+      const data = objectInput(await readInput(req));
+      const sprintId = text(data.sprintId, 'a sprint');
+      if (typeof data.subscribed !== 'boolean') throw new RequestError(400, 'Informe se deseja receber os avisos.');
+      const subscribed = data.subscribed;
+      await storage.transaction(async db => {
+        await required(db.sprints.get(sprintId), 'Sprint');
+        if (subscribed) await db.deploySubscriptions.subscribe(sprintId, user.id);
+        else await db.deploySubscriptions.unsubscribe(sprintId, user.id);
+      });
+      return respond(res, 200, { subscribed });
+    }
+  }
   if (path === '/api/sprint-task-deploy' && req.method === 'PUT') {
     if (userFor(req)?.role !== 'ADM') throw new RequestError(403, 'Somente administradores podem definir a data de deploy.');
     const data = objectInput(await readInput(req));
@@ -98,10 +119,12 @@ export async function planningRoute({ req, res, url, storage, userFor }: RouteCo
       }
     }
     const uniqueIds = [...new Set(ids as string[])];
-    await storage.transaction(async db => {
+    const changedIds = await storage.transaction(async db => {
       const tasks = await Promise.all(uniqueIds.map(id => required(db.tasks.get(id), 'Tarefa')));
       for (const task of tasks) await db.tasks.save({ ...task, deployDate });
+      return tasks.filter(task => task.deployDate !== deployDate).map(task => task.id);
     });
+    if (deployDate && changedIds.length) await notifier.deployRecorded(changedIds, deployDate);
     return respond(res, 200, { updated: uniqueIds.length, deployDate });
   }
   if (path === '/api/sprint-tasks') {

@@ -1,3 +1,5 @@
+import type { DeploySubscriptionRepository } from './notifications';
+
 export type ProjectRecord = { id: string; data: string; updatedAt: Date; hasPendingChanges?: boolean };
 export type ProjectApproverRecord = { id: string; name: string; email: string };
 export type ProjectProposalRecord = {
@@ -87,6 +89,7 @@ export interface StorageSession {
   staff: StaffRepository;
   participants: ParticipantRepository;
   tasks: TaskRepository;
+  deploySubscriptions: DeploySubscriptionRepository;
 }
 
 export interface Storage {

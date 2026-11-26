@@ -11,7 +11,7 @@ function approverIdsInput(value: unknown): string[] | undefined {
   return [...new Set(value)];
 }
 
-export async function projectsRoute({ req, res, url, storage, userFor }: RouteContext) {
+export async function projectsRoute({ req, res, url, storage, notifier, userFor }: RouteContext) {
   const user = userFor(req);
   if (url.pathname === '/api/projects' && req.method === 'GET') {
     const projects = await storage.read(async db => (await db.projects.list()).map(row => {
@@ -147,7 +147,7 @@ export async function projectsRoute({ req, res, url, storage, userFor }: RouteCo
         if (!current) {
           await db.projects.save({ id: projectId, data: JSON.stringify(project), updatedAt: new Date() });
           if (approverIds !== undefined) await db.projects.setApprovers(projectId, approverIds);
-          return { pending: false };
+          return { pending: false, newProposal: false };
         }
         if (approverIds !== undefined) await db.projects.setApprovers(projectId, approverIds);
         const currentData: unknown = JSON.parse(current.data);
@@ -179,7 +179,7 @@ export async function projectsRoute({ req, res, url, storage, userFor }: RouteCo
             });
             await db.projects.deleteProposal(projectId);
           }
-          return { pending: false };
+          return { pending: false, newProposal: false };
         }
 
         const nextProposalData = proposal && changesSinceProposal.length === 0
@@ -195,8 +195,9 @@ export async function projectsRoute({ req, res, url, storage, userFor }: RouteCo
           createdAt: proposal?.createdAt || updatedAt,
           updatedAt,
         });
-        return { pending: true };
+        return { pending: true, newProposal: !proposal };
       });
+      if (result.newProposal) await notifier.proposalPending(projectId);
       return respond(res, 200, { success: true, savedAt: new Date().toISOString(), pending: result.pending });
     }
     if (req.method === 'DELETE') {

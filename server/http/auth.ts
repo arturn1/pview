@@ -220,7 +220,8 @@ export function createAuthMiddleware(
       }
       if (req.method !== 'GET' && req.method !== 'HEAD' && user.role !== 'ADM' && user.role !== 'DIGITAL' &&
           !(user.role === 'DEV' && url.pathname === '/api/sprint-tasks' && req.method === 'PUT') &&
-          !(user.role === 'APPROVER' && url.pathname === '/api/project-review' && req.method === 'POST')) {
+          !(user.role === 'APPROVER' && url.pathname === '/api/project-review' && req.method === 'POST') &&
+          !((user.role === 'USER' || user.role === 'APPROVER') && url.pathname === '/api/sprint-deploy-subscription' && req.method === 'PUT')) {
         return json(res, 403, { error: 'Você não tem permissão para esta operação.' });
       }
       authenticatedUsers.set(req, user);

@@ -14,7 +14,12 @@
     "dev:web": "vite --port 3000 --strictPort",
     "test:postgres": "node --env-file-if-exists=.env --env-file-if-exists=.env.local tests/run-postgres.mjs",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "concurrently --kill-others \"npm:start:api\" \"npm:start:web\"",
+    "start:api": "node --import tsx server/main.ts",
+    "start:web": "vite preview",
+    "docker:up": "docker compose --env-file .env.local up -d --build",
+    "docker:down": "docker compose --env-file .env.local down"
   },
   "dependencies": {
     "@prisma/client": "6.12.0",

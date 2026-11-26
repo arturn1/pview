@@ -211,6 +211,22 @@ pview/
    node --test tests/auth.test.mjs tests/projects.test.mjs tests/sprints.test.mjs tests/sprint-privacy.test.mjs tests/planning.test.mjs tests/devops.test.mjs
    ```
 
+### Docker
+
+Sobe o Postgres e a aplicação (front + API) já conectados, tudo configurado por variáveis de ambiente:
+
+```bash
+cp .env.example .env.local   # defina POSTGRES_PASSWORD (e OAUTH2_* se usar login)
+npm run docker:up            # docker compose --env-file .env.local up -d --build
+npm run docker:down          # para os contêineres (o volume pview-postgres-data é mantido)
+```
+
+- A aplicação fica em `http://localhost:3000` (`WEB_PORT`) e o Postgres em `127.0.0.1:5433` (`POSTGRES_PORT`).
+- O contêiner `app` monta o `DATABASE_URL` a partir de `POSTGRES_USER`, `POSTGRES_PASSWORD` e `POSTGRES_DB` apontando para o serviço `postgres`; use `DOCKER_DATABASE_URL` para apontar para outro banco.
+- As migrations (`prisma migrate deploy`) rodam automaticamente na inicialização.
+- `OAUTH2_REDIRECT_URI` deve corresponder à URL publicada (padrão `http://localhost:3000/`).
+- Nenhum segredo é gravado na imagem; `.env*` está no `.gitignore` e no `.dockerignore`.
+
 ### Autenticação Fanti
 
 A API usa os mesmos parâmetros padrão do Fanti:
@@ -277,6 +293,7 @@ O domínio acessa os contratos de repositórios por entidade em `Storage` e `Use
 - Em **Equipes e colaboradores**, cadastre equipes e seus colaboradores. Em **Organizar**, adicione participantes à sprint e informe a capacidade individual. Os cartões começam recolhidos com um resumo de horas e tarefas; clique no nome para abrir ou fechar os detalhes.
 - Atribua tarefas pelo número externo e projeto vinculado à sprint, com título e vínculo opcional a uma funcionalidade do canvas. Registre horas planejadas, horas reais, lições aprendidas, desafios e observações de revisão. As tarefas podem ser editadas ou excluídas.
 - **Data de deploy:** somente ADM marca a data do deploy efetivo. Em **Organizar**, selecione uma ou várias tarefas (ou **Selecionar todas**), escolha a data e clique em **Definir deploy**; **Limpar deploy** remove a data. Tarefas com data exibem o sinalizador "Deploy em dd/mm/aaaa", inclusive na visão de USER e APPROVER. Editar a tarefa ou reimportá-la do DevOps preserva a data.
+- **Aviso de deploy por e-mail:** na visão da sprint, USER e APPROVER podem se inscrever em **Avisar por e-mail quando houver deploy**. Ao ADM definir uma data de deploy, cada inscrito recebe um e-mail listando as tarefas daquela sprint (reaplicar a mesma data não reenvia). O envio usa o contrato `EmailSender` (`server/domain/notifications.ts`); hoje a implementação é um mock que apenas registra o e-mail no log da API (`EMAIL_PROVIDER=mock`, padrão). **Aprovação pendente:** quando uma edição gera uma nova proposta, os aprovadores designados ao projeto (papel APPROVER) recebem um e-mail; novas edições da mesma proposta não reenviam. Ambos os avisos usam o mesmo `EmailSender`. Para integrar o serviço real, implemente `EmailSender` e registre-o em `createEmailSender` (`server/notifications/email.ts`) com um novo valor de `EMAIL_PROVIDER`.
 - Capacidade e horas usam `H:MM`, com precisão de um minuto. A capacidade pode ser definida depois da atribuição e não impede sobrealocação; o resumo mostra capacidade, horas atribuídas, saldo e utilização. Estimativas pendentes não entram no total de horas e são contabilizadas separadamente.
 - Remova as tarefas antes de excluir a sprint, o participante, o colaborador ou o projeto associado, ou de desvincular da sprint um projeto usado por elas. Remova o vínculo das tarefas antes de excluir uma funcionalidade, inclusive ao excluir seu módulo. Uma equipe com colaboradores não pode ser excluída.
 - Ao excluir um projeto sem tarefas, seus vínculos com sprints são removidos; as sprints permanecem na lista geral, inclusive se ficarem sem projeto. Elas podem ser editadas para vinculá-las novamente.

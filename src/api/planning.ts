@@ -37,6 +37,10 @@ export async function updateCapacity(id: string, totalMinutes: number) { await r
 export async function deleteParticipant(id: string) { await request(url('/api/sprint-participants', id), mutation('DELETE')); }
 export async function saveTask(data: TaskInput, id?: string) { await request(url('/api/sprint-tasks', id), mutation(id ? 'PUT' : 'POST', data)); }
 export async function setTasksDeployDate(taskIds: string[], deployDate: string | null) { await request('/api/sprint-task-deploy', mutation('PUT', { taskIds, deployDate })); }
+export async function getDeploySubscription(sprintId: string): Promise<boolean> {
+  return (await request<{ subscribed: boolean }>(`/api/sprint-deploy-subscription?sprintId=${encodeURIComponent(sprintId)}`)).subscribed;
+}
+export async function setDeploySubscription(sprintId: string, subscribed: boolean) { await request('/api/sprint-deploy-subscription', mutation('PUT', { sprintId, subscribed })); }
 export async function deleteTask(id: string) { await request(url('/api/sprint-tasks', id), mutation('DELETE')); }
 export interface ImportResult { created: number; updated: number; createdStaff: number; pendingEstimates: number }
 export interface DevOpsPreview {

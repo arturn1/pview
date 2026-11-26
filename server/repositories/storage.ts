@@ -8,6 +8,7 @@ import { PrismaTeamRepository } from './teams';
 import { PrismaStaffRepository } from './staff';
 import { PrismaParticipantRepository } from './participants';
 import { PrismaTaskRepository } from './tasks';
+import { PrismaDeploySubscriptionRepository } from './deploy-subscriptions';
 
 function session(db: Client): StorageSession {
   return {
@@ -17,6 +18,7 @@ function session(db: Client): StorageSession {
     staff: new PrismaStaffRepository(db),
     participants: new PrismaParticipantRepository(db),
     tasks: new PrismaTaskRepository(db),
+    deploySubscriptions: new PrismaDeploySubscriptionRepository(db),
   };
 }
 
