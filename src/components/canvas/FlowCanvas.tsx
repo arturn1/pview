@@ -32,7 +32,7 @@ const edgeTypes = {
   customEdge: CustomEdge,
 };
 
-function FlowCanvasContent() {
+function FlowCanvasContent({ onBackToProjects, onOpenSprints, onLogout }: { onBackToProjects: () => void; onOpenSprints: () => void; onLogout: () => void }) {
   const { 
     project, 
     mode, 
@@ -41,17 +41,21 @@ function FlowCanvasContent() {
     addConnection,
     deleteConnection,
     updateNodePosition,
-    loadFromRepository 
+    loadFromRepository,
+    isLoading,
+    loadError,
+    saveError,
+    isSaving,
+    saveToRepository
   } = useProjectStore();
 
   const { fitView, setCenter } = useReactFlow();
 
   const [selectedModuleFilter, setSelectedModuleFilter] = useState<string | null>(null);
 
-  // Carrega os dados persistidos do SQLite ao iniciar
   useEffect(() => {
-    loadFromRepository();
-  }, [loadFromRepository]);
+    setSelectedModuleFilter(null);
+  }, [project.id]);
 
   // Mapeia os nós do modelo para o React Flow
   const initialNodes = useMemo<Node[]>(() => {
@@ -242,10 +246,25 @@ function FlowCanvasContent() {
     fitView({ padding: 0.2, duration: 600 });
   }, [fitView]);
 
+  if (loadError) {
+    return (
+      <div className="w-full h-screen flex items-center justify-center bg-canvas p-4">
+        <div role="alert" className="max-w-md rounded-2xl bg-white border border-rose-200 shadow-md p-6 text-sm text-slate-700">
+          <h1 className="font-bold text-rose-700">Não foi possível carregar os projetos</h1>
+          <p className="mt-2">{loadError}</p>
+          <button onClick={() => void loadFromRepository()} className="mt-4 rounded-xl bg-brand-600 px-4 py-2 text-xs font-bold text-white hover:bg-brand-700">Tentar novamente</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full h-screen relative bg-canvas overflow-hidden">
-      {/* Barra de Ferramentas com Ações do SQLite e Criação */}
+      {/* Barra de ferramentas */}
       <CanvasToolbar
+        onBackToProjects={onBackToProjects}
+        onOpenSprints={onOpenSprints}
+        onLogout={onLogout}
         selectedModuleId={selectedModuleFilter}
         onFilterModule={setSelectedModuleFilter}
         onSearchSelectNode={handleSearchSelect}
@@ -296,6 +315,7 @@ function FlowCanvasContent() {
 
       {/* Drawer Lateral de Inspeção e Edição */}
       <NodeDetailDrawer
+        key={project.id}
         nodeId={selectedNodeId}
         project={project}
         onClose={() => setSelectedNodeId(null)}
@@ -303,14 +323,33 @@ function FlowCanvasContent() {
           setSelectedNodeId(otherId);
         }}
       />
+      {saveError && (
+        <div role="alert" className="absolute bottom-4 left-16 z-40 max-w-md rounded-xl border border-rose-200 bg-white p-3 text-xs text-rose-700 shadow-md">
+          <p>{saveError}</p>
+          <button
+            disabled={isSaving}
+            onClick={() => {
+              saveToRepository().catch((error: unknown) => console.error('Erro ao tentar salvar novamente:', error));
+            }}
+            className="mt-2 font-bold text-brand-600 hover:text-brand-700 disabled:opacity-50"
+          >
+            {isSaving ? 'Salvando...' : 'Tentar salvar novamente'}
+          </button>
+        </div>
+      )}
+      {isLoading && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-white/70 text-sm font-semibold text-slate-700" role="status">
+          Carregando projeto...
+        </div>
+      )}
     </div>
   );
 }
 
-export function FlowCanvas() {
+export function FlowCanvas({ onBackToProjects, onOpenSprints, onLogout }: { onBackToProjects: () => void; onOpenSprints: () => void; onLogout: () => void }) {
   return (
     <ReactFlowProvider>
-      <FlowCanvasContent />
+      <FlowCanvasContent onBackToProjects={onBackToProjects} onOpenSprints={onOpenSprints} onLogout={onLogout} />
     </ReactFlowProvider>
   );
 }

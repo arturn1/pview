@@ -1,0 +1,111 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import ExcelJS from 'exceljs';
+import { createApiFixture } from './api-fixture.mjs';
+
+test('API PostgreSQL aplica permissões, vínculos e importação de tarefas', {
+  skip: !process.env.FLOWDOC_TEST_DATABASE_URL && 'Use npm run test:postgres para criar um banco de teste.',
+}, async () => {
+  const { users, login, request, close } = await createApiFixture();
+  try {
+    await users.seedAdministrator('admin@example.test');
+    assert.equal((await request(null, '/api/projects')).status, 401);
+    const admin = await login('ADMIN@example.test', 'admin-sub');
+    const dev = await login('dev@example.test', 'dev-sub');
+    const reader = await login('reader@example.test', 'reader-sub');
+    assert.equal(admin.status, 200);
+    assert.equal((await request(dev.cookie, '/api/auth/session')).body.role, 'USER');
+    assert.equal((await request(reader.cookie, '/api/users')).status, 403);
+    assert.equal((await request(reader.cookie, '/api/project', 'POST', { id: 'bad' })).status, 403);
+    assert.equal((await login('admin@example.test', 'another-sub')).status, 403);
+    assert.equal((await login('other@example.test', 'admin-sub')).status, 403);
+    const registered = (await request(admin.cookie, '/api/users')).body.users;
+    const devUser = registered.find(user => user.email === 'dev@example.test');
+    const adminUser = registered.find(user => user.email === 'admin@example.test');
+    const readerUser = registered.find(user => user.email === 'reader@example.test');
+    assert.equal((await request(admin.cookie, `/api/users?id=${adminUser.id}`, 'PUT', { role: 'USER' })).status, 409);
+    assert.equal((await request(admin.cookie, `/api/users?id=${devUser.id}`, 'PUT', { role: 'DEV' })).status, 200);
+    assert.equal((await request(dev.cookie, '/api/auth/session')).body.role, 'DEV');
+    assert.equal((await request(admin.cookie, `/api/users?id=${readerUser.id}`, 'PUT', { role: 'DIGITAL' })).status, 200);
+    assert.equal((await request(reader.cookie, '/api/users')).status, 403);
+    assert.equal((await request(reader.cookie, '/api/teams', 'POST', { name: 'Equipe Digital', description: '' })).status, 201);
+    const project = { id: 'p1', name: 'Projeto', nodes: [{ id: 'feature', type: 'feature' }] };
+    assert.equal((await request(admin.cookie, '/api/project', 'POST', project)).status, 200);
+    assert.equal((await request(reader.cookie, '/api/projects')).body[0].name, 'Projeto');
+    const sprintInput = { name: 'São Paulo', objective: 'Entregar', startDate: '2026-01-01', endDate: '2026-01-14', projectIds: ['p1'] };
+    const sprint = (await request(admin.cookie, '/api/sprints', 'POST', sprintInput)).body.sprint;
+    assert.equal((await request(reader.cookie, '/api/sprints?search=SÃO')).body.total, 1);
+    assert.equal((await request(reader.cookie, '/api/sprints?search=%25')).body.total, 0);
+    assert.equal((await request(reader.cookie, '/api/sprints?search=_')).body.total, 0);
+    assert.equal((await request(admin.cookie, '/api/sprints', 'POST', { ...sprintInput, name: 'Entrega 50%_\\' })).status, 201);
+    const literalSearch = new URLSearchParams({ search: '50%_\\' });
+    assert.equal((await request(reader.cookie, `/api/sprints?${literalSearch}`)).body.total, 1);
+    const team = (await request(admin.cookie, '/api/teams', 'POST', { name: 'Dev', description: '' })).body.id;
+    const staff = (await request(admin.cookie, '/api/staff', 'POST', { name: 'Dev', email: 'DEV@example.test', teamId: team })).body.id;
+    const otherStaff = (await request(admin.cookie, '/api/staff', 'POST', { name: 'Outro', email: 'other@example.test', teamId: team })).body.id;
+    assert.equal((await request(admin.cookie, '/api/staff', 'POST', { name: 'Duplicado', email: 'dev@example.test', teamId: team })).status, 409);
+    const participant = (await request(admin.cookie, '/api/sprint-participants', 'POST', { sprintId: sprint.id, staffId: staff, totalMinutes: 3000000000 })).body.id;
+    assert.equal((await request(admin.cookie, '/api/sprint-participants', 'POST', { sprintId: sprint.id, staffId: staff, totalMinutes: 60 })).status, 409);
+    const otherParticipant = (await request(admin.cookie, '/api/sprint-participants', 'POST', { sprintId: sprint.id, staffId: otherStaff, totalMinutes: 60 })).body.id;
+    const taskInput = { participantId: participant, projectId: 'p1', featureId: 'feature', taskNumber: 42, title: 'Tarefa', plannedMinutes: 75, actualMinutes: null, lessons: '', challenges: '', reviewNotes: '' };
+    const task = (await request(admin.cookie, '/api/sprint-tasks', 'POST', taskInput)).body.task;
+    const otherTask = (await request(admin.cookie, '/api/sprint-tasks', 'POST', { ...taskInput, participantId: otherParticipant, taskNumber: 43 })).body.task;
+    assert.equal((await request(admin.cookie, '/api/sprint-tasks', 'POST', { ...taskInput, featureId: 'missing' })).status, 400);
+    assert.equal((await request(admin.cookie, '/api/sprint-tasks', 'POST', { ...taskInput, taskNumber: 3000000000 })).body.task.taskNumber, 3000000000);
+    assert.equal((await request(dev.cookie, `/api/sprint-tasks?id=${task.id}`, 'PUT', { ...taskInput, lessons: 'Aprendi' })).status, 200);
+    assert.equal((await request(dev.cookie, `/api/sprint-tasks?id=${task.id}`, 'PUT', { ...taskInput, participantId: otherParticipant })).status, 400);
+    assert.equal((await request(dev.cookie, `/api/sprint-tasks?id=${otherTask.id}`, 'PUT', { ...taskInput, participantId: otherParticipant })).status, 403);
+    assert.equal((await request(dev.cookie, `/api/sprint-tasks?id=${task.id}`, 'DELETE')).status, 403);
+    assert.equal((await request(admin.cookie, `/api/users?id=${readerUser.id}`, 'PUT', { role: 'USER' })).status, 200);
+    assert.equal((await request(reader.cookie, `/api/sprint-tasks?id=${task.id}`, 'PUT', taskInput)).status, 403);
+    assert.equal((await request(admin.cookie, '/api/project', 'POST', { ...project, nodes: [] })).status, 409);
+    assert.equal((await request(admin.cookie, '/api/project?id=p1', 'DELETE')).status, 409);
+    assert.equal((await request(admin.cookie, `/api/staff?id=${staff}`, 'DELETE')).status, 409);
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Tasks');
+    sheet.addRow(['Title', 'ID', 'Assigned To', 'Original Estimate']);
+    sheet.addRow(['Nova tarefa', { text: '101', hyperlink: 'https://devops.example.test/101' }, 'Pessoa <new@example.test>', 1.5]);
+    const file = Buffer.from(await workbook.xlsx.writeBuffer()).toString('base64');
+    const input = { sprintId: sprint.id, projectId: 'p1', teamId: team, file };
+    const preview = await request(admin.cookie, '/api/sprint-import-devops/preview', 'POST', input);
+    assert.equal(preview.status, 200);
+    assert.equal(preview.body.summary.created, 1);
+    assert.equal((await request(admin.cookie, '/api/sprint-import-devops', 'POST', { ...input, fingerprint: preview.body.fingerprint })).body.created, 1);
+    assert.equal((await request(admin.cookie, '/api/sprint-import-devops', 'POST', { ...input, fingerprint: preview.body.fingerprint })).status, 409);
+    const plan = (await request(reader.cookie, `/api/sprint-plan?sprintId=${sprint.id}`)).body;
+    assert.equal(plan.participants, undefined);
+    assert.deepEqual(Object.keys(plan.tasks.find(item => item.taskNumber === 42)).sort(), [
+      'actualMinutes', 'featureId', 'plannedMinutes', 'projectId', 'taskNumber', 'title',
+    ]);
+    assert.equal((await request(reader.cookie, '/api/staff')).status, 403);
+    const imported = (await request(admin.cookie, `/api/sprint-plan?sprintId=${sprint.id}`)).body.tasks.find(item => item.taskNumber === 101);
+    assert.equal(imported.plannedMinutes, 90);
+    assert.equal(imported.devOpsUrl, 'https://devops.example.test/101');
+    assert.equal((await request(admin.cookie, `/api/sprint-tasks?id=${imported.id}`, 'PUT', { ...imported, lessons: 'Mantida', actualMinutes: 120 })).status, 200);
+    const secondPreview = await request(admin.cookie, '/api/sprint-import-devops/preview', 'POST', input);
+    assert.equal(secondPreview.body.summary.updated, 1);
+    assert.equal((await request(admin.cookie, '/api/sprint-import-devops', 'POST', { ...input, fingerprint: secondPreview.body.fingerprint })).body.updated, 1);
+    const updated = (await request(reader.cookie, `/api/sprint-plan?sprintId=${sprint.id}`)).body.tasks.find(item => item.taskNumber === 101);
+    assert.equal(updated.actualMinutes, 120);
+    if (process.env.FLOWDOC_TEST_LARGE === '1') {
+      const largeWorkbook = new ExcelJS.Workbook();
+      const largeSheet = largeWorkbook.addWorksheet('Tasks');
+      largeSheet.addRow(['Title', 'ID', 'Assigned To', 'Original Estimate']);
+      for (let index = 0; index < 5000; index++) largeSheet.addRow([`Tarefa ${index}`, 10000 + index, 'dev@example.test', 1]);
+      const largeInput = { sprintId: sprint.id, projectId: 'p1', teamId: team, file: Buffer.from(await largeWorkbook.xlsx.writeBuffer()).toString('base64') };
+      const largePreview = await request(admin.cookie, '/api/sprint-import-devops/preview', 'POST', largeInput);
+      assert.equal(largePreview.status, 200);
+      assert.equal(largePreview.body.summary.created, 5000);
+      const largeImport = await request(admin.cookie, '/api/sprint-import-devops', 'POST', { ...largeInput, fingerprint: largePreview.body.fingerprint });
+      assert.equal(largeImport.status, 200);
+      assert.equal(largeImport.body.created, 5000);
+    }
+    assert.equal((await request(admin.cookie, `/api/users?id=${devUser.id}`, 'PUT', { role: 'ADM' })).status, 200);
+    assert.equal((await request(admin.cookie, `/api/users?id=${adminUser.id}`, 'PUT', { role: 'USER' })).status, 200);
+    await users.seedAdministrator('admin@example.test');
+    assert.equal((await users.get(adminUser.id)).role, 'USER');
+    assert.equal((await request(dev.cookie, `/api/users?id=${devUser.id}`, 'PUT', { role: 'USER' })).status, 409);
+  } finally {
+    await close();
+  }
+});

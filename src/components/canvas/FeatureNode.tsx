@@ -128,7 +128,9 @@ export const FeatureNode = memo(({ data }: NodeProps) => {
                     title: 'Excluir funcionalidade',
                     message: `Excluir a funcionalidade "${node.title}" e suas conexões?`,
                     confirmLabel: 'Excluir',
-                    onConfirm: () => deleteNode(node.id),
+                    onConfirm: () => {
+                      deleteNode(node.id).catch((error: unknown) => showDialog({ title: 'Erro ao excluir funcionalidade', message: error instanceof Error ? error.message : 'Não foi possível excluir a funcionalidade.' }));
+                    },
                   });
                 }}
                 title="Excluir funcionalidade"

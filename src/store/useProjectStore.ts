@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { Project, FlowNode, FlowConnection, Rule, Calculation } from '../types';
 import { pilotProject } from '../data/pilotProject';
-import { projectRepository } from '../repositories';
+import { deleteProject as deleteProjectRequest, getProject, listProjects, saveProject, type ProjectSummary } from '../api/projects';
+import { copyImportedProject, parseImportedProject } from '../imports/importProject';
 
 export type AppMode = 'explorer' | 'editor';
 
@@ -11,6 +12,11 @@ interface ProjectStore {
   selectedNodeId: string | null;
   isSaving: boolean;
   isLoading: boolean;
+  loadError: string | null;
+  saveError: string | null;
+  projects: ProjectSummary[];
+  canWrite: boolean;
+  setCanWrite: (value: boolean) => void;
 
   // Modos e Seleção
   setMode: (mode: AppMode) => void;
@@ -23,7 +29,7 @@ interface ProjectStore {
   updateNodeExpanded: (nodeId: string, expanded: boolean) => void;
   updateNodePosition: (nodeId: string, position: { x: number; y: number }) => void;
   updateNodeSize: (nodeId: string, size: { width: number; height: number }) => void;
-  deleteNode: (nodeId: string) => void;
+  deleteNode: (nodeId: string) => Promise<void>;
 
   // CRUD de Regras
   addRule: (nodeId: string, rule: Omit<Rule, 'id'>) => void;
@@ -39,14 +45,45 @@ interface ProjectStore {
   addConnection: (fromId: string, toId: string, sourceHandle?: string, targetHandle?: string) => void;
   deleteConnection: (connectionId: string) => void;
 
-  // Persistência com SQLite (via Repository Pattern)
+  // Persistência de projetos
   loadFromRepository: () => Promise<void>;
   saveToRepository: () => Promise<void>;
+  selectProject: (id: string) => Promise<void>;
+  createProject: (name: string, description: string) => Promise<void>;
+  updateProject: (id: string, name: string, description: string) => Promise<void>;
+  deleteProject: (id: string) => Promise<void>;
+  openPilotProject: () => Promise<void>;
 
   // Export/Import JSON & Reset
   exportProjectJson: () => string;
-  importProjectJson: (jsonString: string) => boolean;
-  resetToDefault: () => void;
+  importProjectJson: (jsonString: string) => Promise<void>;
+}
+
+let initialLoad: Promise<void> | null = null;
+const pendingSaves = new Map<string, Promise<void>>();
+
+function persistProject(project: Project) {
+  const pending = saveProject(project);
+  pendingSaves.set(project.id, pending);
+  pending.then(() => {
+    if (pendingSaves.get(project.id) === pending) {
+      pendingSaves.delete(project.id);
+      useProjectStore.setState({ saveError: null });
+    }
+  }, (error: unknown) => {
+    console.error('Erro ao salvar projeto:', error);
+    if (pendingSaves.get(project.id) === pending) {
+      useProjectStore.setState({
+        saveError: `Não foi possível salvar "${project.name}". Tente salvar novamente antes de trocar de projeto.`,
+      });
+    }
+  });
+}
+
+async function waitForCurrentSave(project: Project) {
+  await pendingSaves.get(project.id);
+  const { saveError } = useProjectStore.getState();
+  if (saveError) throw new Error(saveError);
 }
 
 export const useProjectStore = create<ProjectStore>((set, get) => ({
@@ -54,7 +91,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   mode: 'explorer',
   selectedNodeId: null,
   isSaving: false,
-  isLoading: false,
+  isLoading: true,
+  loadError: null,
+  saveError: null,
+  projects: [],
+  canWrite: true,
+  setCanWrite: (value) => set({ canWrite: value, ...(value ? {} : { mode: 'explorer' }) }),
 
   setMode: (mode) => set({ mode }),
 
@@ -96,8 +138,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         updatedAt: new Date().toISOString(),
       };
 
-      // Dispara salvamento automático em background no SQLite
-      projectRepository.saveProject(updatedProject).catch(console.error);
+      // Dispara salvamento automático em background
+      persistProject(updatedProject);
 
       return {
         project: updatedProject,
@@ -163,7 +205,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         updatedAt: new Date().toISOString(),
       };
 
-      projectRepository.saveProject(updatedProject).catch(console.error);
+      persistProject(updatedProject);
 
       return {
         project: updatedProject,
@@ -192,7 +234,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         updatedAt: new Date().toISOString(),
       };
 
-      projectRepository.saveProject(updatedProject).catch(console.error);
+      persistProject(updatedProject);
 
       return { project: updatedProject };
     });
@@ -219,7 +261,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         updatedAt: new Date().toISOString(),
       };
 
-      projectRepository.saveProject(updatedProject).catch(console.error);
+      persistProject(updatedProject);
 
       return { project: updatedProject };
     });
@@ -246,7 +288,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         updatedAt: new Date().toISOString(),
       };
 
-      projectRepository.saveProject(updatedProject).catch(console.error);
+      if (state.canWrite) persistProject(updatedProject);
       return { project: updatedProject };
     });
   },
@@ -263,30 +305,34 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         }),
       };
 
-      projectRepository.saveProject(updatedProject).catch(console.error);
+      persistProject(updatedProject);
 
       return { project: updatedProject };
     });
   },
 
-  deleteNode: (nodeId) => {
-    set((state) => {
+  deleteNode: async (nodeId) => {
+    set({ isLoading: true });
+    try {
+      await waitForCurrentSave(get().project);
+      const state = get();
+      const removedIds = new Set(state.project.nodes.filter(node => node.id === nodeId || node.parentId === nodeId).map(node => node.id));
       const updatedProject = {
         ...state.project,
-        nodes: state.project.nodes.filter((n) => n.id !== nodeId && n.parentId !== nodeId),
+        nodes: state.project.nodes.filter((n) => !removedIds.has(n.id)),
         connections: state.project.connections.filter(
-          (c) => c.fromId !== nodeId && c.toId !== nodeId
+          (c) => !removedIds.has(c.fromId) && !removedIds.has(c.toId)
         ),
         updatedAt: new Date().toISOString(),
       };
-
-      projectRepository.saveProject(updatedProject).catch(console.error);
-
-      return {
+      await saveProject(updatedProject);
+      set({
         project: updatedProject,
-        selectedNodeId: state.selectedNodeId === nodeId ? null : state.selectedNodeId,
-      };
-    });
+        selectedNodeId: state.selectedNodeId && removedIds.has(state.selectedNodeId) ? null : state.selectedNodeId,
+      });
+    } finally {
+      set({ isLoading: false });
+    }
   },
 
   addRule: (nodeId, ruleData) => {
@@ -312,7 +358,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         }),
       };
 
-      projectRepository.saveProject(updatedProject).catch(console.error);
+      persistProject(updatedProject);
 
       return { project: updatedProject };
     });
@@ -336,7 +382,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         }),
       };
 
-      projectRepository.saveProject(updatedProject).catch(console.error);
+      persistProject(updatedProject);
 
       return { project: updatedProject };
     });
@@ -364,7 +410,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         updatedAt: new Date().toISOString(),
       };
 
-      projectRepository.saveProject(updatedProject).catch(console.error);
+      persistProject(updatedProject);
       return { project: updatedProject };
     });
   },
@@ -392,7 +438,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         }),
       };
 
-      projectRepository.saveProject(updatedProject).catch(console.error);
+      persistProject(updatedProject);
 
       return { project: updatedProject };
     });
@@ -416,7 +462,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         }),
       };
 
-      projectRepository.saveProject(updatedProject).catch(console.error);
+      persistProject(updatedProject);
 
       return { project: updatedProject };
     });
@@ -446,7 +492,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         updatedAt: new Date().toISOString(),
       };
 
-      projectRepository.saveProject(updatedProject).catch(console.error);
+      persistProject(updatedProject);
       return { project: updatedProject };
     });
   },
@@ -483,7 +529,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         updatedAt: new Date().toISOString(),
       };
 
-      projectRepository.saveProject(updatedProject).catch(console.error);
+      persistProject(updatedProject);
 
       return { project: updatedProject };
     });
@@ -497,36 +543,145 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         updatedAt: new Date().toISOString(),
       };
 
-      projectRepository.saveProject(updatedProject).catch(console.error);
+      persistProject(updatedProject);
 
       return { project: updatedProject };
     });
   },
 
-  // Carrega do SQLite ou fallback para pilotProject
-  loadFromRepository: async () => {
-    set({ isLoading: true });
-    try {
-      const saved = await projectRepository.getProject('proj_gestor_projetos');
-      if (saved && saved.nodes && saved.nodes.length > 0) {
-        set({ project: saved, isLoading: false });
-      } else {
-        // Se ainda não salvo, salva o estado inicial
-        await projectRepository.saveProject(pilotProject);
-        set({ project: pilotProject, isLoading: false });
+  loadFromRepository: () => {
+    if (initialLoad) return initialLoad;
+    set({ isLoading: true, loadError: null });
+    initialLoad = (async () => {
+      try {
+        let projects = await listProjects();
+        if (projects.length === 0) {
+          if (!get().canWrite) {
+            set({ projects: [], selectedNodeId: null, isLoading: false });
+            return;
+          }
+          await saveProject(pilotProject);
+          projects = [{ id: pilotProject.id, name: pilotProject.name }];
+        }
+        const currentId = get().project.id;
+        const id = projects.some(project => project.id === currentId) ? currentId : projects[0].id;
+        if (!id) throw new Error('Nenhum projeto disponível.');
+        const project = await getProject(id);
+        if (!project) throw new Error('O projeto selecionado não foi encontrado.');
+        set({ project, projects, selectedNodeId: null, isLoading: false });
+      } catch (error) {
+        console.error('Erro ao carregar projetos:', error);
+        set({ loadError: error instanceof Error ? error.message : 'Erro ao carregar projetos.', isLoading: false });
+      } finally {
+        initialLoad = null;
       }
-    } catch (e) {
-      console.warn('Erro ao carregar do SQLite, usando dados padrão:', e);
-      set({ project: pilotProject, isLoading: false });
-    }
+    })();
+    return initialLoad;
   },
 
   saveToRepository: async () => {
     set({ isSaving: true });
     try {
-      await projectRepository.saveProject(get().project);
+      const project = get().project;
+      persistProject(project);
+      await waitForCurrentSave(project);
     } finally {
       set({ isSaving: false });
+    }
+  },
+
+  selectProject: async (id) => {
+    set({ isLoading: true });
+    try {
+      await waitForCurrentSave(get().project);
+      const project = await getProject(id);
+      if (!project) throw new Error('O projeto selecionado não foi encontrado.');
+      set({ project, selectedNodeId: null });
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  createProject: async (name, description) => {
+    if (!name.trim()) throw new Error('Informe o nome do projeto.');
+    const now = new Date().toISOString();
+    const project: Project = {
+      id: crypto.randomUUID(),
+      name: name.trim(),
+      description: description.trim(),
+      version: '1.0.0',
+      createdAt: now,
+      updatedAt: now,
+      tags: [],
+      isPublic: false,
+      canvasSettings: { ...pilotProject.canvasSettings },
+      nodes: [],
+      connections: [],
+    };
+    set({ isLoading: true });
+    try {
+      await waitForCurrentSave(get().project);
+      await saveProject(project);
+      const projects = await listProjects();
+      set({ project, projects, selectedNodeId: null });
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  updateProject: async (id, name, description) => {
+    if (!name.trim()) throw new Error('Informe o nome do projeto.');
+    set({ isLoading: true });
+    try {
+      await waitForCurrentSave(get().project);
+      const current = get().project;
+      const project = current.id === id ? current : await getProject(id);
+      if (!project || !get().projects.some(item => item.id === id)) throw new Error('O projeto não foi encontrado.');
+      const updatedProject = { ...project, name: name.trim(), description: description.trim(), updatedAt: new Date().toISOString() };
+      await saveProject(updatedProject);
+      set(state => ({
+        project: state.project.id === id ? updatedProject : state.project,
+        projects: state.projects.map(item => item.id === id ? { ...item, name: updatedProject.name } : item),
+      }));
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  deleteProject: async (id) => {
+    set({ isLoading: true });
+    try {
+      await waitForCurrentSave(get().project);
+      const { project, projects } = get();
+      if (!projects.some(item => item.id === id)) throw new Error('O projeto não foi encontrado.');
+      const remaining = projects.filter(item => item.id !== id);
+      let nextProject = project;
+      if (project.id === id && remaining.length > 0) {
+        const next = await getProject(remaining[0].id);
+        if (!next) throw new Error('Não foi possível carregar o próximo projeto.');
+        nextProject = next;
+      }
+      await deleteProjectRequest(id);
+      if (project.id === id && remaining.length === 0) nextProject = pilotProject;
+      set({ project: nextProject, projects: remaining, selectedNodeId: project.id === id ? null : get().selectedNodeId });
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  openPilotProject: async () => {
+    set({ isLoading: true });
+    try {
+      await waitForCurrentSave(get().project);
+      let project = await getProject(pilotProject.id);
+      if (!project) {
+        await saveProject(pilotProject);
+        project = pilotProject;
+      }
+      const projects = await listProjects();
+      set({ project, projects, selectedNodeId: null });
+    } finally {
+      set({ isLoading: false });
     }
   },
 
@@ -534,22 +689,16 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     return JSON.stringify(get().project, null, 2);
   },
 
-  importProjectJson: (jsonString) => {
+  importProjectJson: async (jsonString) => {
+    const project = copyImportedProject(parseImportedProject(jsonString));
+    set({ isLoading: true });
     try {
-      const parsed = JSON.parse(jsonString);
-      if (parsed.id && Array.isArray(parsed.nodes) && Array.isArray(parsed.connections)) {
-        set({ project: parsed, selectedNodeId: null });
-        projectRepository.saveProject(parsed).catch(console.error);
-        return true;
-      }
-      return false;
-    } catch {
-      return false;
+      await waitForCurrentSave(get().project);
+      await saveProject(project);
+      const projects = await listProjects();
+      set({ project, projects, selectedNodeId: null });
+    } finally {
+      set({ isLoading: false });
     }
-  },
-
-  resetToDefault: () => {
-    set({ project: pilotProject, selectedNodeId: null });
-    projectRepository.saveProject(pilotProject).catch(console.error);
   },
 }));

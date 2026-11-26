@@ -1,0 +1,8 @@
+-- AlterTable
+ALTER TABLE "Participant" ALTER COLUMN "totalMinutes" SET DATA TYPE BIGINT;
+
+-- AlterTable
+ALTER TABLE "Task" ALTER COLUMN "taskNumber" SET DATA TYPE BIGINT,
+ALTER COLUMN "plannedMinutes" SET DATA TYPE BIGINT,
+ALTER COLUMN "actualMinutes" SET DATA TYPE BIGINT;
+

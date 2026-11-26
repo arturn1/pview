@@ -332,8 +332,9 @@ export function NodeDetailDrawer({
         : `Tem certeza que deseja excluir "${node.title}" e suas conexões?`,
       confirmLabel: 'Excluir',
       onConfirm: () => {
-        deleteNode(node.id);
-        onClose();
+        deleteNode(node.id).then(onClose).catch((error: unknown) =>
+          showDialog({ title: 'Erro ao excluir', message: error instanceof Error ? error.message : 'Não foi possível excluir o item.' })
+        );
       },
     });
   };

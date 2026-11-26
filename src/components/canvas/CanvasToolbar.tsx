@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { FlowNode } from '../../types';
 import { useProjectStore } from '../../store/useProjectStore';
 import { AddFeatureModal } from './AddFeatureModal';
@@ -16,10 +16,16 @@ import {
   Download,
   Upload,
   RotateCcw,
-  Database
+  Database,
+  ArrowLeft,
+  CalendarDays,
+  LogOut
 } from 'lucide-react';
 
 interface CanvasToolbarProps {
+  onBackToProjects: () => void;
+  onOpenSprints: () => void;
+  onLogout: () => void;
   selectedModuleId: string | null;
   onFilterModule: (moduleId: string | null) => void;
   onSearchSelectNode: (node: FlowNode) => void;
@@ -27,6 +33,9 @@ interface CanvasToolbarProps {
 }
 
 export function CanvasToolbar({
+  onBackToProjects,
+  onOpenSprints,
+  onLogout,
   selectedModuleId,
   onFilterModule,
   onSearchSelectNode,
@@ -34,12 +43,15 @@ export function CanvasToolbar({
 }: CanvasToolbarProps) {
   const showDialog = useAppDialog();
   const { 
-    project, 
+    project,
+    canWrite,
+    projects,
     mode, 
     setMode, 
     exportProjectJson, 
-    importProjectJson, 
-    resetToDefault 
+    importProjectJson,
+    selectProject,
+    openPilotProject
   } = useProjectStore();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -47,6 +59,11 @@ export function CanvasToolbar({
   const [isAddFeatureOpen, setIsAddFeatureOpen] = useState(false);
   const [isAddModuleOpen, setIsAddModuleOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setSearchQuery('');
+    setIsSearchOpen(false);
+  }, [project.id]);
 
   const modules = project.nodes.filter(n => n.type === 'module');
   const allFeatures = project.nodes.filter(n => n.type === 'feature');
@@ -75,10 +92,13 @@ export function CanvasToolbar({
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const content = event.target?.result as string;
-      if (!content || !importProjectJson(content)) {
-        showDialog({ title: 'Arquivo inválido', message: 'Arquivo JSON inválido para projeto FlowDoc.' });
+      try {
+        if (!content) throw new Error('O arquivo está vazio.');
+        await importProjectJson(content);
+      } catch (error) {
+        showDialog({ title: 'Erro ao importar projeto', message: error instanceof Error ? error.message : 'Não foi possível importar o projeto.' });
       }
     };
     reader.onerror = () => showDialog({ title: 'Erro ao importar', message: 'Não foi possível ler o arquivo selecionado.' });
@@ -89,40 +109,65 @@ export function CanvasToolbar({
   return (
     <>
       <header className="absolute top-4 left-4 right-4 z-30 pointer-events-none grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_auto_auto] gap-2 items-start">
-        {/* Brand, Nome do Projeto & Status do SQLite */}
+        {/* Brand, nome do projeto e status da API */}
         <div className="pointer-events-auto order-1 w-fit max-w-full min-w-0 justify-self-start md:col-start-1 md:row-start-1 bg-white/95 backdrop-blur-md border border-slate-200/80 shadow-md rounded-2xl px-4 py-2.5 flex items-center space-x-3.5">
+          <button type="button" onClick={onBackToProjects} title="Voltar aos projetos" aria-label="Voltar aos projetos" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-brand-600">
+            <ArrowLeft className="h-4 w-4" />
+          </button>
           <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-brand-600 to-indigo-500 flex items-center justify-center text-white shadow-sm">
             <Layers className="w-4 h-4" />
           </div>
           <div>
             <div className="flex items-center space-x-2">
               <h1 className="font-extrabold text-sm tracking-tight text-slate-900">
-                {project.name}
+                <label className="sr-only" htmlFor="project-selector">Projeto atual</label>
+                <select
+                  id="project-selector"
+                  value={project.id}
+                  onChange={event => {
+                    selectProject(event.target.value).catch((error: unknown) =>
+                      showDialog({ title: 'Erro ao abrir projeto', message: error instanceof Error ? error.message : 'Não foi possível abrir o projeto.' })
+                    );
+                  }}
+                  className="max-w-[220px] bg-transparent text-sm font-extrabold text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 rounded"
+                >
+                  {projects.map(item => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}{projects.filter(other => other.name === item.name).length > 1 ? ` (${item.id.slice(-8)})` : ''}
+                    </option>
+                  ))}
+                </select>
               </h1>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-50 text-brand-600 border border-brand-200">
                 v{project.version}
               </span>
               <span 
-                title="Persistência ativa em SQLite local (flowdoc.db via node:sqlite)"
+                title="Persistência pela API"
                 className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1"
               >
                 <Database className="w-2.5 h-2.5" />
-                SQLite
+                API
               </span>
             </div>
             <p className="text-[11px] text-slate-400 font-medium line-clamp-1 max-w-[260px]">
               {project.description}
             </p>
           </div>
+          <button type="button" onClick={onOpenSprints} title="Sprints do projeto" aria-label="Sprints do projeto" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-brand-600">
+            <CalendarDays className="h-4 w-4" />
+          </button>
+          <button type="button" onClick={onLogout} title="Sair" aria-label="Sair" className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-rose-600">
+            <LogOut className="h-4 w-4" />
+          </button>
         </div>
 
         {/* Centro e Direita: Filtros, Ações de Edição, Busca e Modo */}
         <div className="contents">
           {/* Module Filter Pills */}
-          <div className="pointer-events-auto order-4 w-fit max-w-full min-w-0 justify-self-start md:col-start-1 md:row-start-2 bg-white/95 backdrop-blur-md border border-slate-200/80 shadow-md rounded-2xl p-1.5 flex items-center gap-1 overflow-x-auto">
+          <div role="group" aria-label="Filtrar por módulo" className="pointer-events-auto order-4 w-56 max-w-full min-w-0 max-h-[30vh] justify-self-start md:col-start-1 md:row-start-2 md:max-h-[calc(100vh-10rem)] bg-white/95 backdrop-blur-md border border-slate-200/80 shadow-md rounded-2xl p-1.5 flex flex-col items-stretch gap-1 overflow-y-auto">
             <button
               onClick={() => onFilterModule(null)}
-              className={`shrink-0 whitespace-nowrap px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+              className={`shrink-0 px-3 py-1.5 rounded-xl text-left text-xs font-semibold transition-all ${
                 selectedModuleId === null
                   ? 'bg-slate-900 text-white shadow-xs'
                   : 'text-slate-600 hover:bg-slate-100'
@@ -137,15 +182,15 @@ export function CanvasToolbar({
                 <button
                   key={mod.id}
                   onClick={() => onFilterModule(isSelected ? null : mod.id)}
-                  className={`shrink-0 whitespace-nowrap px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                  className={`shrink-0 px-3 py-1.5 rounded-xl text-left text-xs font-semibold transition-all flex items-center gap-1.5 ${
                     isSelected
                       ? 'bg-brand-600 text-white shadow-xs'
                       : 'text-slate-600 hover:bg-slate-100'
                   }`}
                 >
-                  <FolderKanban className="w-3.5 h-3.5" />
-                  {mod.title.replace('Módulo: ', '')}
-                  {isSelected && <Check className="w-3 h-3 ml-0.5" />}
+                  <FolderKanban className="w-3.5 h-3.5 shrink-0" />
+                  <span className="min-w-0 flex-1 break-words">{mod.title.replace('Módulo: ', '')}</span>
+                  {isSelected && <Check className="w-3 h-3 ml-0.5 shrink-0" />}
                 </button>
               );
             })}
@@ -187,13 +232,12 @@ export function CanvasToolbar({
               </button>
 
               <button
-                onClick={() => showDialog({
-                  title: 'Restaurar projeto padrão',
-                  message: 'Deseja restaurar o projeto padrão? Alterações não exportadas serão perdidas.',
-                  confirmLabel: 'Restaurar projeto',
-                  onConfirm: resetToDefault,
-                })}
-                title="Restaurar projeto piloto padrão"
+                onClick={() => {
+                  openPilotProject().catch((error: unknown) =>
+                    showDialog({ title: 'Erro ao abrir projeto piloto', message: error instanceof Error ? error.message : 'Não foi possível abrir o projeto piloto.' })
+                  );
+                }}
+                title="Abrir projeto piloto"
                 className="p-1.5 rounded-xl text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
               >
                 <RotateCcw className="w-4 h-4" />
@@ -267,7 +311,7 @@ export function CanvasToolbar({
             <div className="w-[1px] h-4 bg-slate-200" />
             
             {/* Toggle Switch */}
-            <button
+            {canWrite && <button
               onClick={() => setMode(mode === 'explorer' ? 'editor' : 'explorer')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs ${
                 mode === 'editor'
@@ -286,7 +330,7 @@ export function CanvasToolbar({
                   <span>Modo Explorador</span>
                 </>
               )}
-            </button>
+            </button>}
           </div>
         </div>
       </header>
@@ -297,6 +341,7 @@ export function CanvasToolbar({
         onClose={() => setIsAddModuleOpen(false)}
       />
       <AddFeatureModal 
+        key={project.id}
         isOpen={isAddFeatureOpen} 
         onClose={() => setIsAddFeatureOpen(false)} 
       />

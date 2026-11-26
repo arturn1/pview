@@ -106,7 +106,9 @@ export const ModuleNode = memo(({ id, data, selected }: NodeProps) => {
                     title: 'Excluir módulo',
                     message: `Excluir o módulo "${node.title}"${childCount > 0 ? ` e suas ${childCount} funcionalidades` : ''}?`,
                     confirmLabel: 'Excluir',
-                    onConfirm: () => deleteNode(id),
+                    onConfirm: () => {
+                      deleteNode(id).catch((error: unknown) => showDialog({ title: 'Erro ao excluir módulo', message: error instanceof Error ? error.message : 'Não foi possível excluir o módulo.' }));
+                    },
                   });
                 }}
                 title="Excluir módulo"

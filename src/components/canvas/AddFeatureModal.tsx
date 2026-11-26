@@ -16,14 +16,17 @@ export function AddFeatureModal({ isOpen, onClose }: AddFeatureModalProps) {
   );
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const activeModuleId = modules.some(module => module.id === selectedModuleId)
+    ? selectedModuleId
+    : modules[0]?.id || '';
 
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!title.trim() || !selectedModuleId) return;
+    if (!title.trim() || !activeModuleId) return;
 
-    addFeatureNode(selectedModuleId, title, description);
+    addFeatureNode(activeModuleId, title, description);
     setTitle('');
     setDescription('');
     onClose();
@@ -59,7 +62,7 @@ export function AddFeatureModal({ isOpen, onClose }: AddFeatureModalProps) {
             </label>
             <div className="relative">
               <select
-                value={selectedModuleId}
+                value={activeModuleId}
                 onChange={(e) => setSelectedModuleId(e.target.value)}
                 className="w-full text-xs font-semibold text-slate-800 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 appearance-none focus:outline-none focus:ring-2 focus:ring-brand-500"
               >
@@ -71,6 +74,9 @@ export function AddFeatureModal({ isOpen, onClose }: AddFeatureModalProps) {
               </select>
               <FolderKanban className="w-4 h-4 text-slate-400 absolute right-3 top-2.5 pointer-events-none" />
             </div>
+            {modules.length === 0 && (
+              <p className="mt-1 text-xs text-amber-700">Crie um módulo antes de adicionar uma funcionalidade.</p>
+            )}
           </div>
 
           {/* Nome da Funcionalidade */}
@@ -113,7 +119,7 @@ export function AddFeatureModal({ isOpen, onClose }: AddFeatureModalProps) {
             </button>
             <button
               type="submit"
-              disabled={!title.trim()}
+              disabled={!title.trim() || !activeModuleId}
               className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-brand-600 hover:bg-brand-700 disabled:opacity-50 transition-colors shadow-sm"
             >
               Criar Funcionalidade

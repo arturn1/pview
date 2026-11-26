@@ -1,0 +1,111 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         String    @id @default(uuid())
+  email      String    @unique
+  name       String
+  role       Role      @default(USER)
+  identities Identity[]
+}
+
+model Identity {
+  issuer  String
+  subject String
+  userId  String
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([issuer, subject])
+}
+
+enum Role {
+  ADM
+  DIGITAL
+  DEV
+  USER
+}
+
+model Project {
+  id        String          @id
+  data      Json
+  updatedAt DateTime        @updatedAt
+  sprints   SprintProject[]
+  tasks     Task[]
+}
+
+model Sprint {
+  id           String          @id @default(uuid())
+  name         String
+  nameFold     String
+  objective    String
+  startDate    String
+  endDate      String
+  projects     SprintProject[]
+  participants Participant[]
+
+  @@index([startDate, name, id])
+}
+
+model SprintProject {
+  sprintId  String
+  projectId String
+  sprint    Sprint  @relation(fields: [sprintId], references: [id], onDelete: Cascade)
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([sprintId, projectId])
+  @@index([projectId, sprintId])
+}
+
+model Team {
+  id          String  @id @default(uuid())
+  name        String
+  description String
+  staff       Staff[]
+}
+
+model Staff {
+  id           String        @id @default(uuid())
+  name         String
+  email        String?       @unique
+  teamId       String
+  team         Team          @relation(fields: [teamId], references: [id], onDelete: Restrict)
+  participants Participant[]
+}
+
+model Participant {
+  id           String @id @default(uuid())
+  sprintId     String
+  staffId      String
+  totalMinutes BigInt
+  sprint       Sprint @relation(fields: [sprintId], references: [id], onDelete: Cascade)
+  staff        Staff  @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  tasks        Task[]
+
+  @@unique([sprintId, staffId])
+}
+
+model Task {
+  id             String      @id @default(uuid())
+  participantId  String
+  projectId      String
+  featureId      String?
+  taskNumber     BigInt
+  title          String
+  devOpsUrl      String?
+  plannedMinutes BigInt?
+  actualMinutes  BigInt?
+  lessons        String
+  challenges     String
+  reviewNotes    String
+  participant    Participant @relation(fields: [participantId], references: [id], onDelete: Restrict)
+  project        Project     @relation(fields: [projectId], references: [id], onDelete: Restrict)
+
+  @@index([participantId])
+  @@index([projectId, featureId])
+}
