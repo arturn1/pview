@@ -6,14 +6,14 @@ export interface Participant { id: string; sprintId: string; staffId: string; st
 export interface SprintTask {
   id: string; participantId: string; projectId: string; featureId: string | null;
   taskNumber: number; title: string; devOpsUrl: string | null; plannedMinutes: number | null; actualMinutes: number | null;
-  lessons: string; challenges: string; reviewNotes: string;
+  lessons: string; challenges: string; reviewNotes: string; deployDate: string | null;
 }
 export interface SprintOverviewTask {
   taskNumber: number; title: string; projectId: string; featureId: string | null;
-  plannedMinutes: number | null; actualMinutes: number | null;
+  plannedMinutes: number | null; actualMinutes: number | null; deployDate: string | null;
 }
 export interface SprintOverview { tasks: SprintOverviewTask[] }
-export type TaskInput = Omit<SprintTask, 'id' | 'devOpsUrl'>;
+export type TaskInput = Omit<SprintTask, 'id' | 'devOpsUrl' | 'deployDate'>;
 export interface SprintPlan { participants: Participant[]; tasks: SprintTask[] }
 
 function url(path: string, id?: string) {
@@ -36,6 +36,7 @@ export async function addParticipant(sprintId: string, staffId: string, totalMin
 export async function updateCapacity(id: string, totalMinutes: number) { await request(url('/api/sprint-participants', id), mutation('PUT', { totalMinutes })); }
 export async function deleteParticipant(id: string) { await request(url('/api/sprint-participants', id), mutation('DELETE')); }
 export async function saveTask(data: TaskInput, id?: string) { await request(url('/api/sprint-tasks', id), mutation(id ? 'PUT' : 'POST', data)); }
+export async function setTasksDeployDate(taskIds: string[], deployDate: string | null) { await request('/api/sprint-task-deploy', mutation('PUT', { taskIds, deployDate })); }
 export async function deleteTask(id: string) { await request(url('/api/sprint-tasks', id), mutation('DELETE')); }
 export interface ImportResult { created: number; updated: number; createdStaff: number; pendingEstimates: number }
 export interface DevOpsPreview {

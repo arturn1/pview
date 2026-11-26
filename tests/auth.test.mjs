@@ -139,6 +139,7 @@ test('acesso sem sessão inicia login e saída redireciona ao provedor', async (
   let destination;
   let legacyLoggedOut = false;
   let authenticated = false;
+  let sessionRole = 'USER';
   try {
     globalThis.window = {
       location: { hash: '', assign: url => { destination = url; } },
@@ -147,7 +148,7 @@ test('acesso sem sessão inicia login e saída redireciona ao provedor', async (
     globalThis.fetch = async (url, options) => {
       requests.push([url, options]);
       if (url === '/api/auth/session') return authenticated
-        ? Response.json({ authenticated: true, name: 'Pessoa de teste', email: 'pessoa@example.test', role: 'USER' })
+        ? Response.json({ authenticated: true, name: 'Pessoa de teste', email: 'pessoa@example.test', role: sessionRole })
         : new Response(JSON.stringify({ authenticated: false, loggedOut: legacyLoggedOut }), { status: 401 });
       if (url === '/api/auth/login') return new Response(JSON.stringify({ authorizationUrl: 'https://identity.example.test/authorize' }));
       if (url === '/api/auth/logout') return new Response(JSON.stringify({ logoutUrl: 'https://identity.example.test/endsession' }));
@@ -167,6 +168,8 @@ test('acesso sem sessão inicia login e saída redireciona ao provedor', async (
     assert.equal(requests[4][1].method, 'POST');
     authenticated = true;
     assert.deepEqual(await initializeAuth(), { status: 'authenticated', user: { name: 'Pessoa de teste', email: 'pessoa@example.test', role: 'USER' } });
+    sessionRole = 'APPROVER';
+    assert.deepEqual(await initializeAuth(), { status: 'authenticated', user: { name: 'Pessoa de teste', email: 'pessoa@example.test', role: 'APPROVER' } });
   } finally {
     globalThis.window = originalWindow;
     globalThis.fetch = originalFetch;

@@ -1,13 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useContext, useEffect, useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { request } from '../../api/request';
 import type { AuthUser, Role } from '../common/AuthGate';
-import { WorkspaceHeader } from '../common/WorkspaceHeader';
+import { RoleSimulationContext, WorkspaceHeader } from '../common/WorkspaceHeader';
 
 type UserRecord = { id: string; email: string; name: string; role: Role };
-const roles: Role[] = ['USER', 'DEV', 'DIGITAL', 'ADM'];
+const roles: Role[] = ['USER', 'APPROVER', 'DEV', 'DIGITAL', 'ADM'];
+const simulationRoles: Role[] = ['ADM', 'DIGITAL', 'DEV', 'USER', 'APPROVER'];
+const roleLabel = (role: Role) => role === 'APPROVER' ? 'APPROVER — Aprovador' : role;
 
 export function UsersManager({ user, onLogout, onBack }: { user: AuthUser; onLogout: () => void; onBack: () => void }) {
+  const roleSimulation = useContext(RoleSimulationContext);
   const [users, setUsers] = useState<UserRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -51,9 +54,18 @@ export function UsersManager({ user, onLogout, onBack }: { user: AuthUser; onLog
                 if (role) void changeRole(item.id, role);
                 else setError('Papel inválido.');
               }} className="ml-2 rounded-lg border border-slate-200 p-2 text-sm">
-                {roles.map(role => <option key={role} value={role}>{role}</option>)}
+                {roles.map(role => <option key={role} value={role}>{roleLabel(role)}</option>)}
               </select>
             </label>
+            {roleSimulation && item.email === user.email && <label className="text-xs font-bold text-slate-600">Simular papel (somente interface)
+              <select aria-label="Simular papel somente na interface" value={user.role} onChange={event => {
+                const role = simulationRoles.find(option => option === event.target.value);
+                if (role) roleSimulation.onRoleChange(role);
+              }} className="ml-2 rounded-lg border border-slate-200 p-2 text-sm">
+                {simulationRoles.map(role => <option key={role} value={role}>{role === 'ADM' ? 'ADM — conta real' : roleLabel(role)}</option>)}
+              </select>
+              <span className="mt-1 block text-[10px] font-semibold text-amber-700">Vale só para você; a API continua usando as permissões reais de ADM.</span>
+            </label>}
           </div>)}
         </div>
       </main>

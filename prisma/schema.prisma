@@ -2,17 +2,28 @@ generator client {
   provider = "prisma-client-js"
 }
 
+enum ProjectRevisionStatus {
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
 model User {
-  id         String    @id @default(uuid())
-  email      String    @unique
-  name       String
-  role       Role      @default(USER)
-  identities Identity[]
+  id                       String            @id @default(uuid())
+  email                    String            @unique
+  name                     String
+  role                     Role              @default(USER)
+  identities               Identity[]
+  projectProposals         ProjectProposal[] @relation("ProjectProposalAuthor")
+  editedProjectProposals   ProjectProposal[] @relation("ProjectProposalEditor")
+  authoredProjectRevisions ProjectRevision[] @relation("ProjectRevisionAuthor")
+  reviewedProjectRevisions ProjectRevision[] @relation("ProjectRevisionReviewer")
+  projectApprovers         ProjectApprover[]
 }
 
 model Identity {
@@ -29,14 +40,59 @@ enum Role {
   DIGITAL
   DEV
   USER
+  APPROVER
 }
 
 model Project {
-  id        String          @id
+  id        String            @id
   data      Json
-  updatedAt DateTime        @updatedAt
+  updatedAt DateTime          @updatedAt
   sprints   SprintProject[]
   tasks     Task[]
+  proposal  ProjectProposal?
+  history   ProjectRevision[]
+  approvers ProjectApprover[]
+}
+
+model ProjectApprover {
+  projectId String
+  userId    String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, userId])
+  @@index([userId])
+}
+
+model ProjectProposal {
+  id          String   @id @default(uuid())
+  projectId   String   @unique
+  data        Json
+  changes     Json
+  authorId    String
+  updatedById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author      User     @relation("ProjectProposalAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  updatedBy   User     @relation("ProjectProposalEditor", fields: [updatedById], references: [id], onDelete: Restrict)
+}
+
+model ProjectRevision {
+  id         String                @id @default(uuid())
+  projectId  String
+  snapshot   Json
+  changes    Json
+  status     ProjectRevisionStatus
+  authorId   String
+  reviewerId String?
+  createdAt  DateTime              @default(now())
+  reviewedAt DateTime?
+  project    Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  author     User                  @relation("ProjectRevisionAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  reviewer   User?                 @relation("ProjectRevisionReviewer", fields: [reviewerId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, createdAt])
 }
 
 model Sprint {
@@ -103,6 +159,7 @@ model Task {
   lessons        String
   challenges     String
   reviewNotes    String
+  deployDate     String?
   participant    Participant @relation(fields: [participantId], references: [id], onDelete: Restrict)
   project        Project     @relation(fields: [projectId], references: [id], onDelete: Restrict)
 

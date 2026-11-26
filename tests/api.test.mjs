@@ -13,6 +13,8 @@ test('API PostgreSQL aplica permissões, vínculos e importação de tarefas', {
     const admin = await login('ADMIN@example.test', 'admin-sub');
     const dev = await login('dev@example.test', 'dev-sub');
     const reader = await login('reader@example.test', 'reader-sub');
+    const secondApprover = await login('second-approver@example.test', 'second-approver-sub');
+    const outsiderApprover = await login('outsider-approver@example.test', 'outsider-approver-sub');
     assert.equal(admin.status, 200);
     assert.equal((await request(dev.cookie, '/api/auth/session')).body.role, 'USER');
     assert.equal((await request(reader.cookie, '/api/users')).status, 403);
@@ -23,15 +25,60 @@ test('API PostgreSQL aplica permissões, vínculos e importação de tarefas', {
     const devUser = registered.find(user => user.email === 'dev@example.test');
     const adminUser = registered.find(user => user.email === 'admin@example.test');
     const readerUser = registered.find(user => user.email === 'reader@example.test');
+    const secondApproverUser = registered.find(user => user.email === 'second-approver@example.test');
+    const outsiderApproverUser = registered.find(user => user.email === 'outsider-approver@example.test');
     assert.equal((await request(admin.cookie, `/api/users?id=${adminUser.id}`, 'PUT', { role: 'USER' })).status, 409);
     assert.equal((await request(admin.cookie, `/api/users?id=${devUser.id}`, 'PUT', { role: 'DEV' })).status, 200);
     assert.equal((await request(dev.cookie, '/api/auth/session')).body.role, 'DEV');
     assert.equal((await request(admin.cookie, `/api/users?id=${readerUser.id}`, 'PUT', { role: 'DIGITAL' })).status, 200);
     assert.equal((await request(reader.cookie, '/api/users')).status, 403);
     assert.equal((await request(reader.cookie, '/api/teams', 'POST', { name: 'Equipe Digital', description: '' })).status, 201);
+    for (const user of [readerUser, secondApproverUser, outsiderApproverUser]) {
+      assert.equal((await request(admin.cookie, `/api/users?id=${user.id}`, 'PUT', { role: 'APPROVER' })).status, 200);
+    }
     const project = { id: 'p1', name: 'Projeto', nodes: [{ id: 'feature', type: 'feature' }] };
     assert.equal((await request(admin.cookie, '/api/project', 'POST', project)).status, 200);
     assert.equal((await request(reader.cookie, '/api/projects')).body[0].name, 'Projeto');
+    const historyProject = { id: 'history-workflow', name: 'Histórico', description: 'Publicado', nodes: [], connections: [], approverIds: [readerUser.id, secondApproverUser.id] };
+    assert.equal((await request(admin.cookie, '/api/project', 'POST', historyProject)).body.pending, false);
+    assert.equal((await request(admin.cookie, '/api/project?id=history-workflow')).body.approverIds, undefined);
+    const approverOptions = (await request(admin.cookie, '/api/project-approvers?id=history-workflow')).body;
+    assert.deepEqual(approverOptions.selectedIds.sort(), [readerUser.id, secondApproverUser.id].sort());
+    assert.ok(approverOptions.approvers.some(user => user.id === readerUser.id));
+    assert.equal((await request(reader.cookie, '/api/project-approvers')).status, 403);
+    assert.equal((await request(admin.cookie, '/api/project', 'POST', {
+      ...historyProject, id: 'invalid-approver-project', approverIds: [devUser.id],
+    })).status, 400);
+    const proposal = { ...historyProject, description: 'Proposto' };
+    const proposed = await request(admin.cookie, '/api/project', 'POST', proposal);
+    assert.equal(proposed.body.pending, true);
+    assert.equal((await request(reader.cookie, '/api/auth/session')).body.role, 'APPROVER');
+    assert.equal((await request(admin.cookie, '/api/project?id=history-workflow')).body.description, 'Proposto');
+    assert.equal((await request(reader.cookie, '/api/project?id=history-workflow')).body.description, 'Publicado');
+    assert.equal((await request(admin.cookie, '/api/project-approved?id=history-workflow')).body.description, 'Publicado');
+    assert.equal((await request(admin.cookie, '/api/project-approved?id=missing')).status, 404);
+    const approverHistory = (await request(reader.cookie, '/api/project-history?id=history-workflow')).body;
+    assert.equal(approverHistory.pending.changes[0].action, 'UPDATED');
+    assert.equal(approverHistory.canApprove, true);
+    const outsiderHistory = (await request(outsiderApprover.cookie, '/api/project-history?id=history-workflow')).body;
+    assert.equal(outsiderHistory.canApprove, false);
+    assert.equal((await request(outsiderApprover.cookie, `/api/project-review?id=${approverHistory.pending.id}`, 'POST', { action: 'approve' })).status, 403);
+    assert.equal((await request(reader.cookie, '/api/teams', 'POST', { name: 'Equipe Aprovadora', description: '' })).status, 403);
+    assert.equal((await request(reader.cookie, '/api/staff')).status, 403);
+    assert.equal((await request(reader.cookie, `/api/project-review?id=${approverHistory.pending.id}`, 'POST', { action: 'approve' })).body.status, 'APPROVED');
+    assert.equal((await request(admin.cookie, `/api/users?id=${readerUser.id}`, 'PUT', { role: 'USER' })).status, 200);
+    assert.equal((await request(reader.cookie, '/api/project-history?id=history-workflow')).status, 403);
+    assert.deepEqual((await request(admin.cookie, '/api/project-approvers?id=history-workflow')).body.selectedIds, [secondApproverUser.id]);
+    const pendingHistory = (await request(admin.cookie, '/api/project-history?id=history-workflow')).body;
+    assert.equal(pendingHistory.history[0].status, 'APPROVED');
+    assert.equal((await request(reader.cookie, '/api/project?id=history-workflow')).body.description, 'Proposto');
+    const { approverIds: _approverIds, ...proposalContent } = proposal;
+    const rejectedProposal = { ...proposalContent, description: 'Outra proposta' };
+    assert.equal((await request(admin.cookie, '/api/project', 'POST', rejectedProposal)).body.pending, true);
+    const secondPending = (await request(admin.cookie, '/api/project-history?id=history-workflow')).body.pending;
+    assert.equal((await request(admin.cookie, `/api/project-review?id=${secondPending.id}`, 'POST', { action: 'reject' })).body.status, 'REJECTED');
+    assert.equal((await request(reader.cookie, '/api/project?id=history-workflow')).body.description, 'Proposto');
+    assert.ok((await request(admin.cookie, '/api/project-history?id=history-workflow')).body.history.some(revision => revision.status === 'REJECTED'));
     const sprintInput = { name: 'São Paulo', objective: 'Entregar', startDate: '2026-01-01', endDate: '2026-01-14', projectIds: ['p1'] };
     const sprint = (await request(admin.cookie, '/api/sprints', 'POST', sprintInput)).body.sprint;
     assert.equal((await request(reader.cookie, '/api/sprints?search=SÃO')).body.total, 1);
@@ -58,6 +105,14 @@ test('API PostgreSQL aplica permissões, vínculos e importação de tarefas', {
     assert.equal((await request(dev.cookie, `/api/sprint-tasks?id=${task.id}`, 'DELETE')).status, 403);
     assert.equal((await request(admin.cookie, `/api/users?id=${readerUser.id}`, 'PUT', { role: 'USER' })).status, 200);
     assert.equal((await request(reader.cookie, `/api/sprint-tasks?id=${task.id}`, 'PUT', taskInput)).status, 403);
+    assert.equal((await request(dev.cookie, '/api/sprint-task-deploy', 'PUT', { taskIds: [task.id], deployDate: '2026-12-01' })).status, 403);
+    assert.equal((await request(reader.cookie, '/api/sprint-task-deploy', 'PUT', { taskIds: [task.id], deployDate: '2026-12-01' })).status, 403);
+    assert.equal((await request(admin.cookie, '/api/sprint-task-deploy', 'PUT', { taskIds: [task.id], deployDate: '2026-02-31' })).status, 400);
+    assert.equal((await request(admin.cookie, '/api/sprint-task-deploy', 'PUT', { taskIds: [task.id, otherTask.id], deployDate: '2026-12-01' })).body.updated, 2);
+    assert.equal((await request(dev.cookie, `/api/sprint-tasks?id=${task.id}`, 'PUT', { ...taskInput, lessons: 'Depois do deploy' })).status, 200);
+    const deployed = (await request(reader.cookie, `/api/sprint-plan?sprintId=${sprint.id}`)).body.tasks.filter(item => item.deployDate === '2026-12-01');
+    assert.equal(deployed.length, 2);
+    assert.equal((await request(admin.cookie, '/api/sprint-task-deploy', 'PUT', { taskIds: [otherTask.id], deployDate: null })).status, 200);
     assert.equal((await request(admin.cookie, '/api/project', 'POST', { ...project, nodes: [] })).status, 409);
     assert.equal((await request(admin.cookie, '/api/project?id=p1', 'DELETE')).status, 409);
     assert.equal((await request(admin.cookie, `/api/staff?id=${staff}`, 'DELETE')).status, 409);
@@ -75,8 +130,15 @@ test('API PostgreSQL aplica permissões, vínculos e importação de tarefas', {
     const plan = (await request(reader.cookie, `/api/sprint-plan?sprintId=${sprint.id}`)).body;
     assert.equal(plan.participants, undefined);
     assert.deepEqual(Object.keys(plan.tasks.find(item => item.taskNumber === 42)).sort(), [
-      'actualMinutes', 'featureId', 'plannedMinutes', 'projectId', 'taskNumber', 'title',
+      'actualMinutes', 'deployDate', 'featureId', 'plannedMinutes', 'projectId', 'taskNumber', 'title',
     ]);
+    assert.equal((await request(admin.cookie, `/api/users?id=${readerUser.id}`, 'PUT', { role: 'APPROVER' })).status, 200);
+    const approverPlan = (await request(reader.cookie, `/api/sprint-plan?sprintId=${sprint.id}`)).body;
+    assert.equal(approverPlan.participants, undefined);
+    assert.deepEqual(Object.keys(approverPlan.tasks.find(item => item.taskNumber === 42)).sort(), [
+      'actualMinutes', 'deployDate', 'featureId', 'plannedMinutes', 'projectId', 'taskNumber', 'title',
+    ]);
+    assert.equal((await request(admin.cookie, `/api/users?id=${readerUser.id}`, 'PUT', { role: 'USER' })).status, 200);
     assert.equal((await request(reader.cookie, '/api/staff')).status, 403);
     const imported = (await request(admin.cookie, `/api/sprint-plan?sprintId=${sprint.id}`)).body.tasks.find(item => item.taskNumber === 101);
     assert.equal(imported.plannedMinutes, 90);

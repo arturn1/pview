@@ -79,6 +79,7 @@ export async function devOpsRoute({ req, res, url, storage }: RouteContext) {
         devOpsUrl: item.devOpsUrl ?? old?.devOpsUrl ?? null,
         actualMinutes: old?.actualMinutes ?? null, lessons: old?.lessons ?? '',
         challenges: old?.challenges ?? '', reviewNotes: old?.reviewNotes ?? '',
+        deployDate: old?.deployDate ?? null,
       });
     }
     return inspection.summary;

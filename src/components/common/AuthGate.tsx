@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Layers } from 'lucide-react';
 
-export type Role = 'ADM' | 'DIGITAL' | 'DEV' | 'USER';
+export type Role = 'ADM' | 'DIGITAL' | 'DEV' | 'USER' | 'APPROVER';
 export type AuthUser = { name: string; email: string; role: Role };
 type AuthState = { status: 'authenticated'; user: AuthUser } | { status: 'redirecting'; action: 'login' | 'logout' } | { status: 'error' | 'logoutError'; message: string };
 let initialization: Promise<AuthState> | undefined;
@@ -40,7 +40,7 @@ export async function initializeAuth(): Promise<AuthState> {
   if (response.status === 401) return startLogin();
   if (!response.ok) throw new Error('Não foi possível consultar a sessão.');
   const session: { authenticated?: boolean; name?: string; email?: string; role?: Role } = await response.json();
-  if (!session.authenticated || !['ADM', 'DIGITAL', 'DEV', 'USER'].includes(session.role || '')) throw new Error('A resposta de autenticação é inválida.');
+  if (!session.authenticated || !['ADM', 'DIGITAL', 'DEV', 'USER', 'APPROVER'].includes(session.role || '')) throw new Error('A resposta de autenticação é inválida.');
   return { status: 'authenticated', user: { name: session.name || '', email: session.email || '', role: session.role! } };
 }
 

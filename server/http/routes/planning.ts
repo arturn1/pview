@@ -28,6 +28,7 @@ async function validateTask(db: StorageSession, data: Record<string, unknown>, i
     actualMinutes: data.actualMinutes === null ? null : minutes(data.actualMinutes, 'Horas reais'),
     lessons: text(data.lessons, 'as lições', false), challenges: text(data.challenges, 'os desafios', false),
     reviewNotes: text(data.reviewNotes, 'as observações de revisão', false),
+    deployDate: original?.deployDate ?? null,
   };
 }
 
@@ -35,13 +36,14 @@ export async function planningRoute({ req, res, url, storage, userFor }: RouteCo
   const path = url.pathname;
   if (path === '/api/sprint-plan' && req.method === 'GET') {
     const sprintId = text(url.searchParams.get('sprintId'), 'a sprint');
+    const role = userFor(req)?.role;
     const plan = await storage.read(async db => {
       await required(db.sprints.get(sprintId), 'Sprint');
       const tasks = await db.tasks.bySprint(sprintId);
-      if (userFor(req)?.role === 'USER') {
+      if (role === 'USER' || role === 'APPROVER') {
         return {
-          tasks: tasks.map(({ taskNumber, title, projectId, featureId, plannedMinutes, actualMinutes }) => ({
-            taskNumber, title, projectId, featureId, plannedMinutes, actualMinutes,
+          tasks: tasks.map(({ taskNumber, title, projectId, featureId, plannedMinutes, actualMinutes, deployDate }) => ({
+            taskNumber, title, projectId, featureId, plannedMinutes, actualMinutes, deployDate: deployDate ?? null,
           })),
         };
       }
@@ -82,6 +84,25 @@ export async function planningRoute({ req, res, url, storage, userFor }: RouteCo
       });
       return respond(res, 200, req.method === 'PUT' ? { id } : { deleted: id });
     }
+  }
+  if (path === '/api/sprint-task-deploy' && req.method === 'PUT') {
+    if (userFor(req)?.role !== 'ADM') throw new RequestError(403, 'Somente administradores podem definir a data de deploy.');
+    const data = objectInput(await readInput(req));
+    const ids = data.taskIds;
+    if (!Array.isArray(ids) || !ids.length || ids.some(id => typeof id !== 'string' || !id)) throw new RequestError(400, 'Selecione ao menos uma tarefa.');
+    const deployDate = data.deployDate === null ? null : text(data.deployDate, 'a data de deploy');
+    if (deployDate !== null) {
+      const parsed = new Date(`${deployDate}T00:00:00.000Z`);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(deployDate) || Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== deployDate) {
+        throw new RequestError(400, 'Informe uma data de deploy válida.');
+      }
+    }
+    const uniqueIds = [...new Set(ids as string[])];
+    await storage.transaction(async db => {
+      const tasks = await Promise.all(uniqueIds.map(id => required(db.tasks.get(id), 'Tarefa')));
+      for (const task of tasks) await db.tasks.save({ ...task, deployDate });
+    });
+    return respond(res, 200, { updated: uniqueIds.length, deployDate });
   }
   if (path === '/api/sprint-tasks') {
     if (req.method === 'POST' || req.method === 'PUT') {

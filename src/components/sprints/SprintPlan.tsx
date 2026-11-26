@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { ArrowLeft, ChevronDown, ExternalLink, FileUp, Pencil, Plus, Trash2, Users } from 'lucide-react';
-import { addParticipant, deleteParticipant, deleteTask, getPlan, getStaff, updateCapacity, type Participant, type SprintPlan as Plan, type SprintTask, type Staff } from '../../api/planning';
+import { ArrowLeft, ChevronDown, ExternalLink, FileUp, Pencil, Plus, Rocket, Trash2, Users } from 'lucide-react';
+import { addParticipant, deleteParticipant, deleteTask, getPlan, getStaff, setTasksDeployDate, updateCapacity, type Participant, type SprintPlan as Plan, type SprintTask, type Staff } from '../../api/planning';
 import type { Sprint } from '../../api/sprints';
 import { useProjectStore } from '../../store/useProjectStore';
 import { getProject } from '../../api/projects';
@@ -14,13 +14,14 @@ import { formatMinutes, parseMinutes } from './time';
 const buttonClass = 'rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 disabled:opacity-50';
 const fieldClass = 'rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500';
 
-export function ParticipantCard({ participant, tasks, projectNames, featureNames, busy, expanded, onToggle, onCapacity, onRemove, onTask, onDeleteTask, canManage = true, canEditTasks = true }: {
+export function ParticipantCard({ participant, tasks, projectNames, featureNames, busy, expanded, onToggle, onCapacity, onRemove, onTask, onDeleteTask, canManage = true, canEditTasks = true, canDeploy = false, selectedTaskIds, onToggleTask }: {
   participant: Participant; tasks: SprintTask[]; projectNames: Map<string, string>; busy: boolean;
   featureNames: Map<string, Map<string, string>>;
   expanded: boolean; onToggle: () => void;
   onCapacity: (id: string, value: number) => void; onRemove: (participant: Participant) => void;
   onTask: (participantId: string, task?: SprintTask) => void; onDeleteTask: (task: SprintTask) => void;
   canManage?: boolean; canEditTasks?: boolean;
+  canDeploy?: boolean; selectedTaskIds?: Set<string>; onToggleTask?: (taskId: string) => void;
 }) {
   const [capacity, setCapacity] = useState(formatMinutes(participant.totalMinutes));
   const [error, setError] = useState('');
@@ -64,9 +65,11 @@ export function ParticipantCard({ participant, tasks, projectNames, featureNames
         {tasks.length === 0 ? <p className="mt-3 text-sm text-slate-400">Nenhuma tarefa atribuída.</p> : (
           <ul className="mt-3 divide-y divide-slate-100">
             {tasks.map(task => <li key={task.id} className="flex flex-wrap items-center gap-2 py-3">
+              {canDeploy && <input type="checkbox" checked={selectedTaskIds?.has(task.id) ?? false} onChange={() => onToggleTask?.(task.id)} aria-label={`Selecionar tarefa ${task.taskNumber} para deploy`} className="h-4 w-4 shrink-0 accent-brand-600" />}
               <div className="min-w-0 flex-1">
                 <p className="break-words text-sm font-bold text-slate-800">#{task.taskNumber}{task.title && ` · ${task.title}`}</p>
                 <p className="mt-1 text-xs text-slate-500">{projectNames.get(task.projectId) || 'Projeto não encontrado'}</p>
+                {task.deployDate && <p className="mt-1"><span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-700"><Rocket className="h-3 w-3" aria-hidden="true" /> Deploy em {task.deployDate.split('-').reverse().join('/')}</span></p>}
                 {task.featureId && <p className="mt-1 text-xs text-brand-600">Funcionalidade: {featureNames.get(task.projectId)?.get(task.featureId) || 'Não encontrada'}</p>}
                 <p className="mt-1 text-xs text-slate-500">Planejado: {task.plannedMinutes === null ? 'Pendente' : formatMinutes(task.plannedMinutes)}{task.actualMinutes !== null && ` · Real: ${formatMinutes(task.actualMinutes)}`}</p>
                 {task.lessons && <p className="mt-2 whitespace-pre-wrap break-words text-xs text-slate-600"><strong>Lições:</strong> {task.lessons}</p>}
@@ -97,6 +100,8 @@ export function SprintPlan({ sprint, user, onLogout, onBack, onPeople }: { sprin
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
+  const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set());
+  const [deployDate, setDeployDate] = useState('');
   const [form, setForm] = useState<{ participantId: string; task?: SprintTask } | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
@@ -133,13 +138,33 @@ export function SprintPlan({ sprint, user, onLogout, onBack, onPeople }: { sprin
     void run(() => addParticipant(sprint.id, staffId, value), () => { setStaffId(''); setCapacity('0:00'); });
   };
   const confirmRemove = (title: string, message: string, action: () => Promise<void>) => showDialog({
-    title, message, confirmLabel: 'Excluir', onConfirm: () => { void run(action); },
+    title, message, confirmLabel: 'Excluir', onConfirm: () => {
+      void run(async () => {
+        try { await action(); }
+        catch (failure) {
+          showDialog({ title: 'Não foi possível excluir', message: failure instanceof Error ? failure.message : 'Não foi possível excluir.' });
+          throw failure;
+        }
+      });
+    },
   });
   const total = plan.participants.reduce((sum, item) => sum + item.totalMinutes, 0);
   const allocated = plan.tasks.reduce((sum, item) => sum + (item.plannedMinutes ?? 0), 0);
   const projectNames = new Map(projects.map(project => [project.id, project.name]));
   const availableStaff = staff.filter(person => !plan.participants.some(item => item.staffId === person.id));
   const canManage = user.role === 'ADM' || user.role === 'DIGITAL';
+  const canDeploy = user.role === 'ADM';
+  const taskIds = new Set(plan.tasks.map(task => task.id));
+  const selectedIds = [...selectedTasks].filter(id => taskIds.has(id));
+  const toggleTask = (taskId: string) => setSelectedTasks(current => {
+    const next = new Set(current);
+    if (next.has(taskId)) next.delete(taskId); else next.add(taskId);
+    return next;
+  });
+  const applyDeploy = (date: string | null) => {
+    if (!selectedIds.length || (date !== null && !date)) return;
+    void run(() => setTasksDeployDate(selectedIds, date), () => setSelectedTasks(new Set()));
+  };
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -170,8 +195,18 @@ export function SprintPlan({ sprint, user, onLogout, onBack, onPeople }: { sprin
               </form>
               {!staff.length && <p className="mt-3 text-xs text-slate-500">Cadastre uma equipe e um colaborador para começar.</p>}
             </section>}
+            {canDeploy && plan.tasks.length > 0 && <section aria-label="Data de deploy" className="mt-5 flex flex-wrap items-end gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="min-w-[200px] flex-1">
+                <h2 className="flex items-center gap-1.5 text-sm font-bold text-slate-900"><Rocket className="h-4 w-4 text-emerald-600" aria-hidden="true" /> Data de deploy</h2>
+                <p className="mt-1 text-xs text-slate-500">{selectedIds.length ? `${selectedIds.length} ${selectedIds.length === 1 ? 'tarefa selecionada' : 'tarefas selecionadas'}` : 'Marque uma ou mais tarefas nos participantes para definir o deploy.'}</p>
+              </div>
+              <label className="text-xs font-bold text-slate-600">Data<input type="date" value={deployDate} onChange={event => setDeployDate(event.target.value)} className={`${fieldClass} mt-1 block`} /></label>
+              <button type="button" disabled={busy || !selectedIds.length || !deployDate} onClick={() => applyDeploy(deployDate)} className="rounded-xl bg-emerald-600 px-4 py-2.5 text-xs font-bold text-white disabled:opacity-50">Definir deploy</button>
+              <button type="button" disabled={busy || !selectedIds.length} onClick={() => applyDeploy(null)} className={buttonClass}>Limpar deploy</button>
+              <button type="button" disabled={busy || plan.tasks.length === 0} onClick={() => setSelectedTasks(selectedIds.length === plan.tasks.length ? new Set() : new Set(plan.tasks.map(task => task.id)))} className={buttonClass}>{selectedIds.length === plan.tasks.length ? 'Desmarcar todas' : 'Selecionar todas'}</button>
+            </section>}
             <div className="mt-5 space-y-4">
-              {plan.participants.map(person => <ParticipantCard key={person.id} participant={person} tasks={plan.tasks.filter(task => task.participantId === person.id)} projectNames={projectNames} featureNames={featureNames} busy={busy} canManage={canManage} canEditTasks={canManage || (user.role === 'DEV' && staff.some(item => item.id === person.staffId && item.email === user.email))} expanded={expandedParticipants.has(person.id)} onToggle={() => setExpandedParticipants(current => {
+              {plan.participants.map(person => <ParticipantCard key={person.id} participant={person} tasks={plan.tasks.filter(task => task.participantId === person.id)} projectNames={projectNames} featureNames={featureNames} busy={busy} canManage={canManage} canDeploy={canDeploy} selectedTaskIds={selectedTasks} onToggleTask={toggleTask} canEditTasks={canManage || (user.role === 'DEV' && staff.some(item => item.id === person.staffId && item.email === user.email))} expanded={expandedParticipants.has(person.id)} onToggle={() => setExpandedParticipants(current => {
                 const next = new Set(current);
                 if (next.has(person.id)) next.delete(person.id); else next.add(person.id);
                 return next;

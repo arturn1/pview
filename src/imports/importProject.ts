@@ -81,13 +81,17 @@ export function parseImportedProject(json: string): Project {
   return project;
 }
 
-export function copyImportedProject(project: Project): Project {
-  const id = crypto.randomUUID();
+// Aplica o conteúdo importado sobre um projeto, preservando sua identidade (id, nome, descrição e criação).
+export function applyImportedProject(target: Project, imported: Project): Project {
+  const id = target.id;
   return {
-    ...project,
+    ...imported,
     id,
+    name: target.name,
+    description: target.description,
+    createdAt: target.createdAt,
     updatedAt: new Date().toISOString(),
-    nodes: project.nodes.map(node => ({ ...node, projectId: id })),
-    connections: project.connections.map(connection => ({ ...connection, projectId: id })),
+    nodes: imported.nodes.map(node => ({ ...node, projectId: id })),
+    connections: imported.connections.map(connection => ({ ...connection, projectId: id })),
   };
 }

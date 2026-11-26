@@ -56,7 +56,7 @@ export function SprintList({ user, onLogout, onBack, projectId }: { user: AuthUs
   const [peopleOpen, setPeopleOpen] = useState(false);
   const projectName = projects.find(project => project.id === projectId)?.name;
   const canManage = user.role === 'ADM' || user.role === 'DIGITAL';
-  const viewOnly = user.role === 'USER';
+  const viewOnly = user.role === 'USER' || user.role === 'APPROVER';
 
   useEffect(() => {
     const timer = window.setTimeout(() => {

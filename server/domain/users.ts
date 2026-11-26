@@ -1,7 +1,7 @@
 import { RequestError } from '../http/helpers';
 import { normalizeEmail } from './validation';
 
-export type Role = 'ADM' | 'DIGITAL' | 'DEV' | 'USER';
+export type Role = 'ADM' | 'DIGITAL' | 'DEV' | 'USER' | 'APPROVER';
 export type User = { id: string; email: string; name: string; role: Role };
 export type Identity = { issuer: string; subject: string; email: string; name: string };
 
@@ -24,5 +24,5 @@ export function normalizeUserEmail(value: string) {
 }
 
 export function isRole(value: unknown): value is Role {
-  return value === 'ADM' || value === 'DIGITAL' || value === 'DEV' || value === 'USER';
+  return value === 'ADM' || value === 'DIGITAL' || value === 'DEV' || value === 'USER' || value === 'APPROVER';
 }

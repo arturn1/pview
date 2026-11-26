@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Rocket } from 'lucide-react';
 import { getProject, type ProjectSummary } from '../../api/projects';
 import { getSprintOverview, type SprintOverview as Overview } from '../../api/planning';
 import type { Sprint } from '../../api/sprints';
@@ -85,6 +85,7 @@ export function SprintOverview({ sprint, user, onLogout, onBack }: {
                   {overview.tasks.map((task, index) => <li key={`${task.projectId}-${task.taskNumber}-${index}`} className="py-4">
                     <p className="break-words text-sm font-bold text-slate-800">#{task.taskNumber}{task.title && ` · ${task.title}`}</p>
                     <p className="mt-1 text-xs text-slate-500">{projectNames.get(task.projectId) || 'Projeto não encontrado'}</p>
+                    {task.deployDate && <p className="mt-1"><span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-700"><Rocket className="h-3 w-3" aria-hidden="true" /> Deploy em {displayDate(task.deployDate)}</span></p>}
                     {task.featureId && <p className="mt-1 text-xs text-brand-600">Funcionalidade: {featureNames.get(task.projectId)?.get(task.featureId) || 'Não encontrada'}</p>}
                     <p className="mt-1 text-xs text-slate-500">Planejado: {task.plannedMinutes === null ? 'Estimativa pendente' : formatMinutes(task.plannedMinutes)} · Realizado: {task.actualMinutes === null ? 'Sem horas registradas' : formatMinutes(task.actualMinutes)}</p>
                   </li>)}

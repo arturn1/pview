@@ -115,7 +115,7 @@ test('API Prisma preserva os cenários de sprints, planejamento e importação',
       const created = await api('/api/sprint-tasks', 'POST', input);
       assert.equal(created.status, 201);
       const taskId = created.body.task.id;
-      assert.deepEqual(created.body.task, { id: taskId, ...input, devOpsUrl: null });
+      assert.deepEqual(created.body.task, { id: taskId, ...input, devOpsUrl: null, deployDate: null });
       for (const invalid of [
         { ...input, plannedMinutes: 0.5 }, { ...input, projectId: 'plan-p3', featureId: null },
         { ...input, projectId: 'plan-p2', featureId: 'feature' }, { ...input, featureId: 'module' },
@@ -129,7 +129,7 @@ test('API Prisma preserva os cenários de sprints, planejamento e importação',
       assert.equal((await api(`/api/sprint-tasks?id=${taskId}`, 'PUT', changed)).status, 200);
       const plan = (await api(`/api/sprint-plan?sprintId=${sprintId}`)).body;
       assert.equal(plan.participants[0].totalMinutes, 74);
-      assert.deepEqual(plan.tasks[0], { id: taskId, ...changed, devOpsUrl: null });
+      assert.deepEqual(plan.tasks[0], { id: taskId, ...changed, devOpsUrl: null, deployDate: null });
       for (const path of [`/api/sprint-participants?id=${participantId}`, `/api/staff?id=${personId}`, `/api/sprints?id=${sprintId}`, '/api/project?id=plan-p1']) {
         assert.equal((await api(path, 'DELETE')).status, 409);
       }

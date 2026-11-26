@@ -63,7 +63,15 @@ export function PeopleManager({ user, onLogout, onBack }: { user: AuthUser; onLo
     title: `Excluir ${kind}`,
     message: `Excluir "${item.name}"? Esta ação não pode ser desfeita.`,
     confirmLabel: 'Excluir',
-    onConfirm: () => { void run(() => kind === 'equipe' ? deleteTeam(item.id) : deleteStaff(item.id)); },
+    onConfirm: () => {
+      void run(async () => {
+        try { await (kind === 'equipe' ? deleteTeam(item.id) : deleteStaff(item.id)); }
+        catch (failure) {
+          showDialog({ title: 'Não foi possível excluir', message: failure instanceof Error ? failure.message : 'Não foi possível excluir.' });
+          throw failure;
+        }
+      });
+    },
   });
 
   return (

@@ -22,7 +22,7 @@ test('projetos independentes preservam dados ao criar, importar, trocar e recarr
     if (options.method === 'DELETE') {
       if (failDeletes) return new Response('error', { status: 500 });
       database.delete(parsed.searchParams.get('id'));
-      return Response.json({ success: true });
+      return Response.json({ success: true, pending: false });
     }
     if (options.method === 'POST') {
       writesInProgress++;
@@ -32,7 +32,7 @@ test('projetos independentes preservam dados ao criar, importar, trocar e recarr
       if (failWrites) return Response.json({ error: 'Remova os vínculos das tarefas antes de excluir funcionalidades do projeto.' }, { status: 409 });
       const project = JSON.parse(options.body);
       database.set(project.id, project);
-      return Response.json({ success: true });
+      return Response.json({ success: true, pending: false });
     }
     const project = database.get(parsed.searchParams.get('id'));
     return project ? Response.json(project) : new Response('not found', { status: 404 });
@@ -52,13 +52,21 @@ test('projetos independentes preservam dados ao criar, importar, trocar e recarr
 
     const json = await readFile(new URL('../docs/flowdoc.json', import.meta.url), 'utf8');
     await state().importProjectJson(json);
-    const firstCopy = structuredClone(state().project);
-    assert.notEqual(firstCopy.id, pilot.id);
-    assert.ok(firstCopy.nodes.every(node => node.projectId === firstCopy.id));
-    assert.ok(firstCopy.connections.every(connection => connection.projectId === firstCopy.id));
+    const updated = structuredClone(state().project);
+    assert.equal(updated.id, emptyId);
+    assert.equal(updated.name, 'Projeto vazio');
+    assert.ok(updated.nodes.length > 0);
+    assert.ok(updated.nodes.every(node => node.projectId === emptyId));
+    assert.ok(updated.connections.every(connection => connection.projectId === emptyId));
     await state().importProjectJson(json);
-    assert.notEqual(state().project.id, firstCopy.id);
-    assert.equal(state().projects.length, 4);
+    assert.equal(state().project.id, emptyId);
+    assert.equal(state().projects.length, 2);
+    await state().createProject('Do arquivo', 'desc', [], json);
+    assert.notEqual(state().project.id, emptyId);
+    assert.equal(state().project.name, 'Do arquivo');
+    assert.ok(state().project.nodes.every(node => node.projectId === state().project.id));
+    assert.equal(state().projects.length, 3);
+    const firstCopy = structuredClone(state().project);
     assert.deepEqual(database.get(pilot.id), pilot);
     await state().openPilotProject();
     assert.deepEqual(state().project, pilot);
@@ -121,6 +129,13 @@ test('projetos independentes preservam dados ao criar, importar, trocar e recarr
       createElement(ProjectList, { user: { name: 'Pessoa de teste', email: 'pessoa@example.test', role: 'USER' }, onLogout() {}, onOpenProject() {}, onOpenSprints() {}, onManageUsers() {} }),
     ));
     assert.doesNotMatch(readOnlyList, /Novo Projeto|Editar Projeto vazio|Excluir Projeto vazio|>Usuários</);
+    assert.doesNotMatch(readOnlyList, /Histórico de Projeto vazio/);
+    const approverList = renderToStaticMarkup(createElement(
+      AppDialogProvider, null,
+      createElement(ProjectList, { user: { name: 'Pessoa de teste', email: 'pessoa@example.test', role: 'APPROVER' }, onLogout() {}, onOpenProject() {}, onOpenSprints() {}, onManageUsers() {} }),
+    ));
+    assert.match(approverList, /Histórico de Projeto vazio/);
+    assert.doesNotMatch(approverList, /Editar Projeto vazio|Excluir Projeto vazio/);
     snapshot.loadError = 'Falha de teste';
     const errorPage = renderList();
     assert.match(errorPage, /Não foi possível carregar os projetos/);
@@ -167,6 +182,44 @@ test('projetos independentes preservam dados ao criar, importar, trocar e recarr
   }
 });
 
+test('diff semântico registra conteúdo e ignora mudanças somente visuais', async () => {
+  const server = await createServer({ configFile: false, optimizeDeps: { noDiscovery: true }, server: { middlewareMode: true, hmr: false }, appType: 'custom' });
+  try {
+    const { diffProjectChanges, mergeProjectPresentation } = await server.ssrLoadModule('/server/domain/project-changes.ts');
+    const published = {
+      id: 'p1',
+      name: 'Projeto',
+      description: 'Descrição',
+      nodes: [{
+        id: 'module-1',
+        type: 'module',
+        title: 'Módulo',
+        position: { x: 10, y: 20 },
+        color: 'blue',
+        content: { rules: [{ id: 'rule-1', condition: 'A', consequence: 'B' }], calculations: [], inputs: [], outputs: [], notes: [] },
+      }],
+      connections: [],
+    };
+    const visualEdit = structuredClone(published);
+    visualEdit.nodes[0].position.x = 80;
+    visualEdit.nodes[0].color = 'green';
+    assert.deepEqual(diffProjectChanges(published, visualEdit), []);
+
+    const contentEdit = structuredClone(visualEdit);
+    contentEdit.nodes[0].content.rules[0].consequence = 'C';
+    const changes = diffProjectChanges(published, contentEdit);
+    assert.equal(changes.length, 1);
+    assert.equal(changes[0].itemType, 'rule');
+    assert.equal(changes[0].action, 'UPDATED');
+    const merged = mergeProjectPresentation(published, contentEdit);
+    assert.equal(merged.nodes[0].position.x, 80);
+    assert.equal(merged.nodes[0].color, 'green');
+    assert.equal(merged.nodes[0].content.rules[0].consequence, 'B');
+  } finally {
+    await server.close();
+  }
+});
+
 test('operações de projeto aguardam gravações e a fila se recupera após falha', async () => {
   const server = await createServer({ configFile: false, optimizeDeps: { noDiscovery: true }, server: { middlewareMode: true, hmr: false }, appType: 'custom' });
   const previousFetch = globalThis.fetch;
@@ -182,7 +235,7 @@ test('operações de projeto aguardam gravações e a fila se recupera após fal
         await firstWrite;
         return Response.json({ error: 'Falha de gravação' }, { status: 409 });
       }
-      return Response.json({ success: true });
+      return Response.json({ success: true, pending: false });
     }
     if (url === '/api/project?id=missing') return new Response(null, { status: 404 });
     if (url === '/api/projects') return Response.json([{ id: 'p1', name: 'Projeto' }]);
@@ -244,7 +297,7 @@ test('modo somente leitura expande funcionalidades sem gravar o projeto', async 
   const previousFetch = globalThis.fetch;
   let writes = 0;
   try {
-    globalThis.fetch = async () => { writes++; return Response.json({ success: true }); };
+    globalThis.fetch = async () => { writes++; return Response.json({ success: true, pending: false }); };
     const { useProjectStore } = await server.ssrLoadModule('/src/store/useProjectStore.ts');
     const state = useProjectStore.getState();
     const feature = state.project.nodes.find(node => node.type === 'feature');

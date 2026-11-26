@@ -50,6 +50,7 @@ export class PrismaUserRepository implements UserRepository {
       if (user.role === 'ADM' && role !== 'ADM' && await tx.user.count({ where: { role: 'ADM' } }) <= 1) {
         throw new RequestError(409, 'É necessário manter ao menos um administrador.');
       }
+      if (user.role === 'APPROVER' && role !== 'APPROVER') await tx.projectApprover.deleteMany({ where: { userId: id } });
       return tx.user.update({ where: { id }, data: { role } });
     }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
   }

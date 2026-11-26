@@ -1,4 +1,16 @@
-export type ProjectRecord = { id: string; data: string; updatedAt: Date };
+export type ProjectRecord = { id: string; data: string; updatedAt: Date; hasPendingChanges?: boolean };
+export type ProjectApproverRecord = { id: string; name: string; email: string };
+export type ProjectProposalRecord = {
+  id: string; projectId: string; data: string; changes: string; authorId: string; authorName: string;
+  updatedById: string; updatedByName: string; createdAt: Date; updatedAt: Date;
+};
+export type ProjectRevisionRecord = {
+  id: string; projectId: string; snapshot: string; changes: string; status: 'APPROVED' | 'REJECTED' | 'CANCELLED';
+  authorId: string; authorName: string; reviewerId: string | null; reviewerName: string | null;
+  createdAt: Date; reviewedAt: Date | null;
+};
+export type ProjectProposalInput = Omit<ProjectProposalRecord, 'authorName' | 'updatedByName'>;
+export type ProjectRevisionInput = Omit<ProjectRevisionRecord, 'authorName' | 'reviewerName'>;
 export type SprintRecord = { id: string; name: string; objective: string; startDate: string; endDate: string; projectIds: string[] };
 export type TeamRecord = { id: string; name: string; description: string };
 export type StaffRecord = { id: string; name: string; email: string | null; teamId: string };
@@ -7,6 +19,7 @@ export type TaskRecord = {
   id: string; participantId: string; projectId: string; featureId: string | null;
   taskNumber: number; title: string; devOpsUrl: string | null; plannedMinutes: number | null;
   actualMinutes: number | null; lessons: string; challenges: string; reviewNotes: string;
+  deployDate: string | null;
 };
 
 export interface ProjectRepository {
@@ -14,6 +27,16 @@ export interface ProjectRepository {
   get(id: string): Promise<ProjectRecord | null>;
   save(project: ProjectRecord): Promise<void>;
   delete(id: string): Promise<void>;
+  listApprovers(): Promise<ProjectApproverRecord[]>;
+  listApproverIds(projectId: string): Promise<string[]>;
+  setApprovers(projectId: string, approverIds: string[]): Promise<void>;
+  isApprover(projectId: string, userId: string): Promise<boolean>;
+  getProposal(projectId: string): Promise<ProjectProposalRecord | null>;
+  getProposalById(id: string): Promise<ProjectProposalRecord | null>;
+  saveProposal(proposal: ProjectProposalInput): Promise<void>;
+  deleteProposal(projectId: string): Promise<void>;
+  saveRevision(revision: ProjectRevisionInput): Promise<void>;
+  listHistory(projectId: string): Promise<ProjectRevisionRecord[]>;
 }
 
 export interface SprintRepository {

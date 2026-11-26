@@ -24,9 +24,10 @@ const getModuleIcon = (iconName?: string) => {
   }
 };
 
-export const ModuleNode = memo(({ id, data, selected }: NodeProps) => {
+export const ModuleNode = memo(({ id, data }: NodeProps) => {
   const { node, childCount = 0, onSelectNode } = (data || {}) as unknown as ModuleNodeData;
-  const { mode, updateNodeSize, deleteNode } = useProjectStore();
+  const { mode, updateNodeSize, deleteNode, resizingModuleId } = useProjectStore();
+  const resizing = mode === 'editor' && resizingModuleId === id;
   const showDialog = useAppDialog();
 
   const width = node?.size?.width || 840;
@@ -40,7 +41,7 @@ export const ModuleNode = memo(({ id, data, selected }: NodeProps) => {
         <NodeResizer
           minWidth={360}
           minHeight={200}
-          isVisible={selected}
+          isVisible={resizing}
           lineClassName="!border-brand-500 !border-2"
           handleClassName="!w-3.5 !h-3.5 !bg-white !border-2 !border-brand-600 !rounded-full shadow-md hover:!scale-125 transition-transform"
           onResizeEnd={(_event, params) => {
@@ -61,7 +62,7 @@ export const ModuleNode = memo(({ id, data, selected }: NodeProps) => {
           backgroundColor: `${color}06`,
         }}
         className={`rounded-3xl border-2 border-dashed p-6 transition-all duration-150 select-none relative group ${
-          selected && mode === 'editor' ? 'ring-2 ring-brand-500 ring-offset-2' : ''
+          resizing ? 'ring-2 ring-brand-500 ring-offset-2' : ''
         }`}
       >
         {/* Header do Módulo */}
@@ -121,9 +122,9 @@ export const ModuleNode = memo(({ id, data, selected }: NodeProps) => {
         </div>
 
         {/* Dica de redimensionamento no Modo Editor quando selecionado */}
-        {mode === 'editor' && selected && (
+        {resizing && (
           <div className="absolute top-3 right-3 text-[10px] bg-brand-600 text-white font-bold px-2 py-0.5 rounded-full shadow-xs animate-in fade-in">
-            Arraste as bordas para redimensionar
+            Modo redimensionar: arraste as bordas
           </div>
         )}
 

@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { Project, FlowNode, FlowConnection, Rule, Calculation } from '../types';
 import { pilotProject } from '../data/pilotProject';
 import { deleteProject as deleteProjectRequest, getProject, listProjects, saveProject, type ProjectSummary } from '../api/projects';
-import { copyImportedProject, parseImportedProject } from '../imports/importProject';
+import { applyImportedProject, parseImportedProject } from '../imports/importProject';
 
 export type AppMode = 'explorer' | 'editor';
 
@@ -10,6 +10,8 @@ interface ProjectStore {
   project: Project;
   mode: AppMode;
   selectedNodeId: string | null;
+  resizingModuleId: string | null;
+  setResizingModuleId: (id: string | null) => void;
   isSaving: boolean;
   isLoading: boolean;
   loadError: string | null;
@@ -49,8 +51,8 @@ interface ProjectStore {
   loadFromRepository: () => Promise<void>;
   saveToRepository: () => Promise<void>;
   selectProject: (id: string) => Promise<void>;
-  createProject: (name: string, description: string) => Promise<void>;
-  updateProject: (id: string, name: string, description: string) => Promise<void>;
+  createProject: (name: string, description: string, approverIds?: string[], importJson?: string) => Promise<void>;
+  updateProject: (id: string, name: string, description: string, approverIds?: string[]) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
   openPilotProject: () => Promise<void>;
 
@@ -60,15 +62,18 @@ interface ProjectStore {
 }
 
 let initialLoad: Promise<void> | null = null;
-const pendingSaves = new Map<string, Promise<void>>();
+const pendingSaves = new Map<string, Promise<{ pending: boolean }>>();
 
 function persistProject(project: Project) {
   const pending = saveProject(project);
   pendingSaves.set(project.id, pending);
-  pending.then(() => {
+  pending.then(result => {
     if (pendingSaves.get(project.id) === pending) {
       pendingSaves.delete(project.id);
-      useProjectStore.setState({ saveError: null });
+      useProjectStore.setState(state => ({
+        saveError: null,
+        projects: state.projects.map(item => item.id === project.id ? { ...item, hasPendingChanges: result.pending } : item),
+      }));
     }
   }, (error: unknown) => {
     console.error('Erro ao salvar projeto:', error);
@@ -90,6 +95,8 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   project: pilotProject,
   mode: 'explorer',
   selectedNodeId: null,
+  resizingModuleId: null,
+  setResizingModuleId: (id) => set({ resizingModuleId: id }),
   isSaving: false,
   isLoading: true,
   loadError: null,
@@ -325,9 +332,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
         ),
         updatedAt: new Date().toISOString(),
       };
-      await saveProject(updatedProject);
+      const saveResult = await saveProject(updatedProject);
       set({
         project: updatedProject,
+        projects: get().projects.map(item => item.id === updatedProject.id
+          ? { ...item, hasPendingChanges: saveResult.pending }
+          : item),
         selectedNodeId: state.selectedNodeId && removedIds.has(state.selectedNodeId) ? null : state.selectedNodeId,
       });
     } finally {
@@ -602,10 +612,10 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     }
   },
 
-  createProject: async (name, description) => {
+  createProject: async (name, description, approverIds, importJson) => {
     if (!name.trim()) throw new Error('Informe o nome do projeto.');
     const now = new Date().toISOString();
-    const project: Project = {
+    const blank: Project = {
       id: crypto.randomUUID(),
       name: name.trim(),
       description: description.trim(),
@@ -618,10 +628,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       nodes: [],
       connections: [],
     };
+    const project = importJson ? applyImportedProject(blank, parseImportedProject(importJson)) : blank;
     set({ isLoading: true });
     try {
       await waitForCurrentSave(get().project);
-      await saveProject(project);
+      await saveProject(project, approverIds);
       const projects = await listProjects();
       set({ project, projects, selectedNodeId: null });
     } finally {
@@ -629,7 +640,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     }
   },
 
-  updateProject: async (id, name, description) => {
+  updateProject: async (id, name, description, approverIds) => {
     if (!name.trim()) throw new Error('Informe o nome do projeto.');
     set({ isLoading: true });
     try {
@@ -638,10 +649,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
       const project = current.id === id ? current : await getProject(id);
       if (!project || !get().projects.some(item => item.id === id)) throw new Error('O projeto não foi encontrado.');
       const updatedProject = { ...project, name: name.trim(), description: description.trim(), updatedAt: new Date().toISOString() };
-      await saveProject(updatedProject);
+      const saveResult = await saveProject(updatedProject, approverIds);
       set(state => ({
         project: state.project.id === id ? updatedProject : state.project,
-        projects: state.projects.map(item => item.id === id ? { ...item, name: updatedProject.name } : item),
+        projects: state.projects.map(item => item.id === id ? {
+          ...item,
+          name: updatedProject.name,
+          hasPendingChanges: saveResult.pending,
+        } : item),
       }));
     } finally {
       set({ isLoading: false });
@@ -690,10 +705,11 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
   },
 
   importProjectJson: async (jsonString) => {
-    const project = copyImportedProject(parseImportedProject(jsonString));
+    const imported = parseImportedProject(jsonString);
     set({ isLoading: true });
     try {
       await waitForCurrentSave(get().project);
+      const project = applyImportedProject(get().project, imported);
       await saveProject(project);
       const projects = await listProjects();
       set({ project, projects, selectedNodeId: null });

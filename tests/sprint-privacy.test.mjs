@@ -33,7 +33,7 @@ test('visão de sprint para USER não retorna dados que identifiquem colaborador
     assert.deepEqual(JSON.parse(responseBody), {
       tasks: [{
         taskNumber: 42, title: 'Tarefa', projectId: 'project-id', featureId: 'feature-id',
-        plannedMinutes: 60, actualMinutes: 30,
+        plannedMinutes: 60, actualMinutes: 30, deployDate: null,
       }],
     });
   } finally {

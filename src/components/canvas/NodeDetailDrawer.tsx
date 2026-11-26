@@ -9,12 +9,14 @@ import {
   CalculationVariable,
 } from '../../types';
 import { useProjectStore } from '../../store/useProjectStore';
+import { getApprovedProject } from '../../api/projects';
 import { FormulaRenderer } from '../common/FormulaRenderer';
 import { FormulaSimulator } from '../common/FormulaSimulator';
 import { useAppDialog } from '../common/AppDialog';
 import { 
   X, 
-  Layers, 
+  Layers,
+  Maximize2, 
   AlertCircle, 
   Calculator, 
   ArrowRight, 
@@ -54,10 +56,29 @@ export function NodeDetailDrawer({
     addCalculation, 
     updateCalculation,
     deleteCalculation,
-    deleteConnection
+    deleteConnection,
+    resizingModuleId,
+    setResizingModuleId
   } = useProjectStore();
 
-  const node = project.nodes.find(n => n.id === nodeId) || null;
+  const hasPending = useProjectStore(state => state.projects.find(item => item.id === project.id)?.hasPendingChanges ?? false);
+  const [approved, setApproved] = useState<Project | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    if (!hasPending) { setApproved(null); return; }
+    getApprovedProject(project.id).then(result => { if (active) setApproved(result); }).catch(() => { if (active) setApproved(null); });
+    return () => { active = false; };
+  }, [project.id, project.updatedAt, hasPending]);
+
+  // Fora do modo editor, exibe a versão aprovada até que a proposta seja revisada
+  const workingNode = project.nodes.find(n => n.id === nodeId) || null;
+  const approvedNode = approved?.nodes.find(n => n.id === nodeId) || null;
+  const showApproved = hasPending && mode !== 'editor' && !!approved && !!approvedNode;
+  const node = showApproved ? approvedNode : workingNode;
+  const viewProject = showApproved ? approved : project;
+
+  const moduleFeatures = node?.type === 'module' ? project.nodes.filter(n => n.parentId === node.id) : [];
 
   const [activeTab, setActiveTab] = useState<'rules' | 'calculations' | 'connections'>('rules');
   const [ruleSeverityFilter, setRuleSeverityFilter] = useState<RuleSeverity | 'all'>('all');
@@ -99,6 +120,10 @@ export function NodeDetailDrawer({
   const [expandedCalculationIds, setExpandedCalculationIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
+    setResizingModuleId(null);
+  }, [nodeId, setResizingModuleId]);
+
+  useEffect(() => {
     if (node) {
       setEditTitle(node.title);
       setEditDescription(node.content.description);
@@ -116,10 +141,38 @@ export function NodeDetailDrawer({
 
   if (!node) return null;
 
+  const sameValue = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+  const pendingState = (list: 'rules' | 'calculations', id: string): string | null => {
+    if (!hasPending || !approved) return null;
+    const before = approvedNode?.content[list].find(item => item.id === id);
+    const after = workingNode?.content[list].find(item => item.id === id);
+    if (before && after) return sameValue(before, after) ? null : 'Alteração pendente';
+    if (before) return 'Remoção pendente';
+    return after ? 'Novo item pendente' : null;
+  };
+  const countPending = (list: 'rules' | 'calculations') => {
+    const ids = new Set([...(approvedNode?.content[list] ?? []), ...(workingNode?.content[list] ?? [])].map(item => item.id));
+    return [...ids].filter(id => pendingState(list, id)).length;
+  };
+  const isNewPending = hasPending && !!approved && !!workingNode && !approvedNode;
+  const infoChanged = !!approvedNode && !!workingNode && (
+    approvedNode.title !== workingNode.title || approvedNode.content.description !== workingNode.content.description || !sameValue(approvedNode.tags, workingNode.tags)
+  );
+  const connectionsChanged = hasPending && !!approved && !sameValue(
+    approved.connections.filter(c => c.fromId === node.id || c.toId === node.id),
+    project.connections.filter(c => c.fromId === node.id || c.toId === node.id),
+  );
+  const pendingTotal = hasPending && approved ? countPending('rules') + countPending('calculations') + (infoChanged ? 1 : 0) + (connectionsChanged ? 1 : 0) + (isNewPending ? 1 : 0) : 0;
+  const PendingBadge = ({ label }: { label: string | null }) => label ? (
+    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+      <AlertCircle className="w-3 h-3" /> {label}
+    </span>
+  ) : null;
+
   const color = node.color || '#6366F1';
   const parentModule = project.nodes.find(n => n.id === node.parentId);
 
-  const relatedConnections = project.connections.filter(
+  const relatedConnections = viewProject.connections.filter(
     c => c.fromId === node.id || c.toId === node.id
   );
 
@@ -392,6 +445,95 @@ export function NodeDetailDrawer({
           <X className="w-5 h-5" />
         </button>
       </div>
+
+      {node.type === 'module' ? (
+        <div className="px-6 py-6 bg-white border-b border-slate-100 flex-1 overflow-y-auto">
+          <span className="flex items-center gap-1.5 font-bold text-brand-600 text-[11px] uppercase tracking-wider">
+            <FileText className="w-3.5 h-3.5" />
+            O que este módulo faz
+          </span>
+          {mode === 'editor' ? (
+            <>
+              <textarea
+                rows={8}
+                value={editDescription}
+                onChange={(e) => setEditDescription(e.target.value)}
+                onBlur={handleSaveInfo}
+                className="mt-3 w-full text-sm text-slate-800 leading-relaxed bg-slate-50 border border-slate-200 rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-brand-500 resize-none"
+              />
+              <button
+                onClick={handleSaveInfo}
+                className="mt-2 text-[11px] font-bold text-brand-600 hover:text-brand-700 flex items-center gap-1"
+              >
+                <Save className="w-3 h-3" />
+                Salvar
+              </button>
+            </>
+          ) : (
+            <p className="mt-3 text-sm text-slate-800 leading-relaxed whitespace-pre-line">
+              {node.content.description || 'Sem descrição.'}
+            </p>
+          )}
+
+          <div className="mt-6">
+            <span className="font-bold text-slate-400 text-[10px] uppercase tracking-wider">
+              Funcionalidades ({moduleFeatures.length})
+            </span>
+            {moduleFeatures.length === 0 ? (
+              <p className="mt-2 text-xs text-slate-400">Nenhuma funcionalidade neste módulo.</p>
+            ) : (
+              <ul className="mt-2 space-y-1.5">
+                {moduleFeatures.map(feature => (
+                  <li key={feature.id}>
+                    <button
+                      type="button"
+                      onClick={() => onSelectOtherNode?.(feature.id)}
+                      className="w-full text-left text-xs font-semibold text-slate-700 bg-slate-50 hover:bg-brand-50 hover:text-brand-700 border border-slate-200 rounded-lg px-3 py-2 transition-colors"
+                    >
+                      {feature.title}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          {mode === 'editor' && (
+            <div className="mt-6">
+              <button
+                type="button"
+                onClick={() => setResizingModuleId(resizingModuleId === node.id ? null : node.id)}
+                aria-pressed={resizingModuleId === node.id}
+                className={`w-full flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold border transition-colors ${
+                  resizingModuleId === node.id
+                    ? 'bg-brand-600 text-white border-brand-600 hover:bg-brand-700'
+                    : 'bg-white text-brand-700 border-brand-300 hover:bg-brand-50'
+                }`}
+              >
+                <Maximize2 className="w-4 h-4" />
+                {resizingModuleId === node.id ? 'Concluir redimensionamento' : 'Redimensionar módulo'}
+              </button>
+              {resizingModuleId === node.id && (
+                <p className="mt-2 text-[11px] text-slate-500">Arraste as bordas ou cantos do módulo no canvas para ajustar o tamanho.</p>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
+      {pendingTotal > 0 && (
+        <div role="status" className="px-6 py-3 bg-amber-50 border-b border-amber-200 text-xs text-amber-900 leading-relaxed">
+          <p className="font-bold flex items-center gap-1.5"><AlertCircle className="w-3.5 h-3.5" /> Há alterações pendentes de aprovação</p>
+          <p className="mt-0.5">
+            {isNewPending
+              ? 'Este item ainda não foi aprovado.'
+              : showApproved
+                ? 'Exibindo os valores aprovados até que a alteração seja aprovada.'
+                : 'Você está vendo a versão em edição; as alterações ainda não foram aprovadas.'}
+            {' '}({pendingTotal} {pendingTotal === 1 ? 'alteração' : 'alterações'}{infoChanged ? ', incluindo título, descrição ou tags' : ''})
+          </p>
+        </div>
+      )}
 
       {/* Descrição do Componente */}
       <div className="px-6 py-4 bg-white border-b border-slate-100 text-xs text-slate-600 leading-relaxed">
@@ -757,6 +899,7 @@ export function NodeDetailDrawer({
                         : 'bg-amber-50/40 border-amber-200'
                     }`}
                   >
+                    {pendingState('rules', rule.id) && <div className="mb-1.5"><PendingBadge label={pendingState('rules', rule.id)} /></div>}
                     <div className="flex items-center justify-between mb-1.5">
                       <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
                         isCritical ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'
@@ -1067,6 +1210,7 @@ export function NodeDetailDrawer({
                   </form>
                 ) : (
                 <div key={calc.id} className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-sm space-y-4 relative group">
+                  {pendingState('calculations', calc.id) && <div><PendingBadge label={pendingState('calculations', calc.id)} /></div>}
                   <div className={`relative flex items-center justify-between ${!expandedCalculationIds.has(calc.id) ? 'min-h-8' : 'items-start'}`}>
                     <div className={!expandedCalculationIds.has(calc.id) ? 'absolute inset-x-10 text-center' : ''}>
                       <h3 className="font-bold text-sm text-slate-900">{calc.name}</h3>
@@ -1194,6 +1338,9 @@ export function NodeDetailDrawer({
           </div>
         )}
       </div>
+
+        </>
+      )}
 
       {/* Footer Info & Ações do Modo Editor */}
       <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-400">

@@ -241,6 +241,17 @@ function FlowCanvasContent({ onBackToProjects, onOpenSprints, onLogout }: { onBa
     });
   }, [setCenter, setSelectedNodeId]);
 
+  // Ao filtrar por módulo, move a visualização para ele como na busca
+  const handleFilterModule = useCallback((moduleId: string | null) => {
+    setSelectedModuleFilter(moduleId);
+    const target = moduleId ? project.nodes.find(n => n.id === moduleId) : null;
+    if (target) {
+      setCenter(target.position.x + 160, target.position.y + 100, { zoom: 1.0, duration: 700 });
+    } else {
+      fitView({ padding: 0.2, duration: 600 });
+    }
+  }, [project.nodes, setCenter, fitView]);
+
   // Enquadra tudo
   const handleFitView = useCallback(() => {
     fitView({ padding: 0.2, duration: 600 });
@@ -266,7 +277,7 @@ function FlowCanvasContent({ onBackToProjects, onOpenSprints, onLogout }: { onBa
         onOpenSprints={onOpenSprints}
         onLogout={onLogout}
         selectedModuleId={selectedModuleFilter}
-        onFilterModule={setSelectedModuleFilter}
+        onFilterModule={handleFilterModule}
         onSearchSelectNode={handleSearchSelect}
         onFitView={handleFitView}
       />

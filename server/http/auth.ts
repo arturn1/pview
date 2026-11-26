@@ -215,11 +215,12 @@ export function createAuthMiddleware(
         }
         return json(res, 405, { error: 'Método não permitido.' });
       }
-      if (url.pathname === '/api/staff' && req.method === 'GET' && user.role === 'USER') {
+      if (url.pathname === '/api/staff' && req.method === 'GET' && (user.role === 'USER' || user.role === 'APPROVER')) {
         return json(res, 403, { error: 'Acesso restrito a organizadores da sprint.' });
       }
       if (req.method !== 'GET' && req.method !== 'HEAD' && user.role !== 'ADM' && user.role !== 'DIGITAL' &&
-          !(user.role === 'DEV' && url.pathname === '/api/sprint-tasks' && req.method === 'PUT')) {
+          !(user.role === 'DEV' && url.pathname === '/api/sprint-tasks' && req.method === 'PUT') &&
+          !(user.role === 'APPROVER' && url.pathname === '/api/project-review' && req.method === 'POST')) {
         return json(res, 403, { error: 'Você não tem permissão para esta operação.' });
       }
       authenticatedUsers.set(req, user);

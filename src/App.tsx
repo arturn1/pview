@@ -4,12 +4,13 @@ import { AppDialogProvider } from './components/common/AppDialog';
 import { AuthGate, type AuthUser, type Role } from './components/common/AuthGate';
 import { RoleSimulationContext } from './components/common/WorkspaceHeader';
 import { ProjectList } from './components/projects/ProjectList';
+import { ProjectHistory } from './components/projects/ProjectHistory';
 import { UsersManager } from './components/projects/UsersManager';
 import { SprintList } from './components/sprints/SprintList';
 import { useProjectStore } from './store/useProjectStore';
 
 function ProjectWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => void }) {
-  const [view, setView] = useState<{ page: 'home' } | { page: 'canvas' } | { page: 'users' } | { page: 'sprints'; projectId?: string; returnTo: 'home' | 'canvas' }>({ page: 'home' });
+  const [view, setView] = useState<{ page: 'home' } | { page: 'canvas' } | { page: 'users' } | { page: 'history'; projectId: string } | { page: 'sprints'; projectId?: string; returnTo: 'home' | 'canvas' }>({ page: 'home' });
   const [simulatedRole, setSimulatedRole] = useState<Role | null>(null);
   const loadFromRepository = useProjectStore(state => state.loadFromRepository);
   const setCanWrite = useProjectStore(state => state.setCanWrite);
@@ -30,9 +31,11 @@ function ProjectWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
     ? <FlowCanvas onBackToProjects={() => setView({ page: 'home' })} onOpenSprints={() => setView({ page: 'sprints', projectId, returnTo: 'canvas' })} onLogout={onLogout} />
     : view.page === 'users'
       ? <UsersManager user={displayedUser} onLogout={onLogout} onBack={() => setView({ page: 'home' })} />
-      : view.page === 'sprints'
-        ? <SprintList user={displayedUser} onLogout={onLogout} projectId={view.projectId} onBack={() => setView({ page: view.returnTo })} />
-        : <ProjectList user={displayedUser} onLogout={onLogout} onOpenProject={() => setView({ page: 'canvas' })} onOpenSprints={id => setView({ page: 'sprints', projectId: id, returnTo: 'home' })} onManageUsers={() => setView({ page: 'users' })} />;
+      : view.page === 'history'
+        ? <ProjectHistory projectId={view.projectId} user={displayedUser} onLogout={onLogout} onBack={() => setView({ page: 'home' })} />
+        : view.page === 'sprints'
+          ? <SprintList user={displayedUser} onLogout={onLogout} projectId={view.projectId} onBack={() => setView({ page: view.returnTo })} />
+          : <ProjectList user={displayedUser} onLogout={onLogout} onOpenProject={() => setView({ page: 'canvas' })} onOpenSprints={id => setView({ page: 'sprints', projectId: id, returnTo: 'home' })} onManageUsers={() => setView({ page: 'users' })} onOpenHistory={id => setView({ page: 'history', projectId: id })} />;
 
   return <RoleSimulationContext.Provider value={user.role === 'ADM' ? { onRoleChange: changeSimulatedRole } : null}>{content}</RoleSimulationContext.Provider>;
 }

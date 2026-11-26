@@ -11,13 +11,18 @@ import { devOpsRoute } from './devops';
 
 const routes: Record<string, (context: RouteContext) => Promise<void | ServerResponse>> = {
   '/api/projects': projectsRoute,
+  '/api/project-approvers': projectsRoute,
   '/api/project': projectsRoute,
+  '/api/project-history': projectsRoute,
+  '/api/project-approved': projectsRoute,
+  '/api/project-review': projectsRoute,
   '/api/sprints': sprintsRoute,
   '/api/teams': peopleRoute,
   '/api/staff': peopleRoute,
   '/api/sprint-plan': planningRoute,
   '/api/sprint-participants': planningRoute,
   '/api/sprint-tasks': planningRoute,
+  '/api/sprint-task-deploy': planningRoute,
   '/api/sprint-import-devops': devOpsRoute,
   '/api/sprint-import-devops/preview': devOpsRoute,
 };

@@ -46,7 +46,7 @@ test('cartão oferece consulta de tarefas e esconde ações de organização par
   }
 });
 
-test('simulação de papel é identificada como visual e só aparece com o contexto de ADM', async () => {
+test('cabeçalho oferece volta ao ADM durante a simulação, só com o contexto de ADM', async () => {
   const vite = await createServer({ configFile: false, optimizeDeps: { noDiscovery: true }, server: { middlewareMode: true, hmr: false }, appType: 'custom' });
   try {
     const { RoleSimulationContext, WorkspaceHeader } = await vite.ssrLoadModule('/src/components/common/WorkspaceHeader.tsx');
@@ -56,10 +56,10 @@ test('simulação de papel é identificada como visual e só aparece com o conte
       { value: { onRoleChange() {} } },
       createElement(WorkspaceHeader, { user, onLogout() {} }),
     ));
-    assert.match(simulated, /Simular papel \(somente interface\)/);
+    assert.match(simulated, /Simulando USER · Voltar ao ADM/);
     assert.match(simulated, /API continua usando as permissões reais de ADM/);
     const regular = renderToStaticMarkup(createElement(WorkspaceHeader, { user, onLogout() {} }));
-    assert.doesNotMatch(regular, /Simular papel/);
+    assert.doesNotMatch(regular, /Voltar ao ADM/);
   } finally {
     await vite.close();
   }
